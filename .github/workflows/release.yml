@@ -22,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           
       - name: Install Dependencies
         working-directory: .
@@ -36,7 +36,7 @@ jobs:
         run: zip -r virgule.zip dist/
         
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v3.0.0
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           files: virgule.zip
