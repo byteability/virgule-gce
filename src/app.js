@@ -251,6 +251,7 @@ const privacyNoteSaveBtn = document.getElementById("privacy-note-save-btn");
 
 const privacyUnlockBtn = document.getElementById("privacy-unlock-btn");
 const privacyEnabledToggle = document.getElementById("privacy-enabled-toggle");
+const privacyStartLockedToggle = document.getElementById("privacy-start-locked-toggle");
 const privacyTimeoutInput = document.getElementById("privacy-timeout-input");
 const privacySearchEngineCbs = document.querySelectorAll(".privacy-search-engine-cb");
 const privacyAiSelect = document.getElementById("privacy-ai-engine");
@@ -281,6 +282,7 @@ const OPEN_TABS_KEY = "clio-notes-open-tabs";
 const ACTIVE_TAB_KEY = "clio-notes-active-tab";
 const THEME_KEY = "clio-notes-theme";
 const PRIVACY_ENABLED_KEY = "clio-notes-privacy-enabled";
+const PRIVACY_START_LOCKED_KEY = "clio-notes-privacy-start-locked";
 const PRIVACY_TIMEOUT_KEY = "clio-notes-privacy-timeout";
 const PRIVACY_SEARCH_KEY = "clio-notes-privacy-search";
 const PRIVACY_AI_KEY = "clio-notes-privacy-ai";
@@ -314,6 +316,7 @@ const state = {
   activeTabId: null,
   theme: "system",
   privacyEnabled: false,
+  privacyStartLocked: true,
   privacyTimeout: 5,
   privacySearchEngines: ["https://www.google.com/search?q="],
   privacyAiEngine: "https://gemini.google.com/app",
@@ -2995,6 +2998,7 @@ async function initializePrivacyScreen() {
   console.log("Initializing Privacy Screen...", { privacyLockTrigger });
   // Load settings
   state.privacyEnabled = localStorage.getItem(PRIVACY_ENABLED_KEY) === "true";
+  state.privacyStartLocked = localStorage.getItem(PRIVACY_START_LOCKED_KEY) !== "false";
   state.privacyTimeout = parseInt(localStorage.getItem(PRIVACY_TIMEOUT_KEY) || "5", 10);
   try {
     const stored = localStorage.getItem(PRIVACY_SEARCH_KEY);
@@ -3009,6 +3013,7 @@ async function initializePrivacyScreen() {
 
   // Update UI settings
   if (privacyEnabledToggle) privacyEnabledToggle.checked = state.privacyEnabled;
+  if (privacyStartLockedToggle) privacyStartLockedToggle.checked = state.privacyStartLocked;
   if (privacyTimeoutInput) privacyTimeoutInput.value = state.privacyTimeout;
   if (privacySearchEngineCbs.length) {
     privacySearchEngineCbs.forEach(cb => {
@@ -3024,6 +3029,10 @@ async function initializePrivacyScreen() {
   privacyEnabledToggle?.addEventListener("change", (e) => {
     state.privacyEnabled = e.target.checked;
     localStorage.setItem(PRIVACY_ENABLED_KEY, state.privacyEnabled);
+  });
+  privacyStartLockedToggle?.addEventListener("change", (e) => {
+    state.privacyStartLocked = e.target.checked;
+    localStorage.setItem(PRIVACY_START_LOCKED_KEY, state.privacyStartLocked);
   });
   privacyTimeoutInput?.addEventListener("change", (e) => {
     state.privacyTimeout = parseInt(e.target.value, 10);
@@ -3179,7 +3188,7 @@ async function initializePrivacyScreen() {
   setInterval(checkPrivacyIdle, 10000); // Check every 10 seconds
 
   // Always open with lock screen turned on if enabled
-  if (state.privacyEnabled) {
+  if (state.privacyEnabled && state.privacyStartLocked) {
     showPrivacyScreen();
   } else {
     // Instantly hide without animation
