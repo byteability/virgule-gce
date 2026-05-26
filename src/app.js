@@ -268,6 +268,12 @@ const explorerSidebar = document.getElementById("explorer-sidebar");
 const searchSidebar = document.getElementById("search-sidebar");
 const globalSearchInput = document.getElementById("global-search-input");
 const searchResultsContainer = document.getElementById("search-results");
+const autoSaveToggle = document.getElementById("auto-save-toggle");
+const autoSaveDelaySelect = document.getElementById("auto-save-delay");
+const autoSaveDelayRow = document.getElementById("auto-save-delay-row");
+const autoSaveIndicator = document.getElementById("auto-save-indicator");
+const autoSaveIndicatorDot = document.getElementById("auto-save-indicator-dot");
+const autoSaveIndicatorText = document.getElementById("auto-save-indicator-text");
 
 const LIBRARY_DB_NAME = "clio-notes-db";
 const LIBRARY_DB_VERSION = 1;
@@ -289,6 +295,8 @@ const PRIVACY_AI_KEY = "clio-notes-privacy-ai";
 const PRIVACY_PASSWORD_KEY = "clio-notes-privacy-password";
 const PRIVACY_LINKS_KEY = "clio-notes-privacy-links";
 const PRIVACY_TIMEZONE_KEY = "clio-notes-privacy-timezone";
+const AUTO_SAVE_KEY = "clio-notes-auto-save";
+const AUTO_SAVE_DELAY_KEY = "clio-notes-auto-save-delay";
 
 const state = {
   libraryFolders: [],
@@ -324,8 +332,15 @@ const state = {
   privacyLinks: "https://github.com\nhttps://gmail.com\nhttps://youtube.com\nhttps://twitter.com",
   privacyTimezone: "auto",
   privacyActive: false,
-  lastActivity: Date.now()
+  lastActivity: Date.now(),
+  autoSave: true,
+  autoSaveDelay: 2000
 };
+
+/** Debounce timer handle for auto-save */
+let autoSaveTimer = null;
+/** Timer handle used to hide the "Saved" indicator after a delay */
+let autoSaveHideTimer = null;
 
 settingsBtn.addEventListener("click", toggleSettingsPanel);
 closeSettingsBtn.addEventListener("click", () => setSettingsPanelOpen(false));
@@ -338,6 +353,7 @@ addLibraryFolderBtn.addEventListener("click", () => {
 
 void initializePrivacyScreen();
 void initializeFloatingAi();
+initializeAutoSave();
 
 // ─── Sidebar Switching ───────────────────────────────────────────────────────
 
@@ -496,6 +512,7 @@ editor.addEventListener("input", () => {
     activeTab.isDirty = true;
     renderTabs();
   }
+  scheduleAutoSave();
 });
 editorDropZone.addEventListener("dragover", onEditorDragOver);
 editorDropZone.addEventListener("dragleave", onEditorDragLeave);
@@ -547,6 +564,150 @@ window.addEventListener("keydown", (event) => {
 
 function setStatus(message) {
   statusLabel.textContent = message;
+}
+
+// ─── Auto-save ───────────────────────────────────────────────────────────────
+
+function initializeAutoSave() {
+  const savedEnabled = localStorage.getItem(AUTO_SAVE_KEY);
+  state.autoSave = savedEnabled === null ? true : savedEnabled === "true";
+
+  const savedDelay = localStorage.getItem(AUTO_SAVE_DELAY_KEY);
+  state.autoSaveDelay = savedDelay ? parseInt(savedDelay, 10) : 3000;
+
+  // Sync UI
+  if (autoSaveToggle) {
+    autoSaveToggle.checked = state.autoSave;
+    if (autoSaveDelayRow) {
+      autoSaveDelayRow.style.opacity = state.autoSave ? "1" : "0.4";
+      autoSaveDelayRow.style.pointerEvents = state.autoSave ? "" : "none";
+    }
+    autoSaveToggle.addEventListener("change", () => {
+      state.autoSave = autoSaveToggle.checked;
+      localStorage.setItem(AUTO_SAVE_KEY, String(state.autoSave));
+      if (autoSaveDelayRow) {
+        autoSaveDelayRow.style.opacity = state.autoSave ? "1" : "0.4";
+        autoSaveDelayRow.style.pointerEvents = state.autoSave ? "" : "none";
+      }
+      if (!state.autoSave) {
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = null;
+        hideAutoSaveIndicator();
+      }
+    });
+  }
+
+  if (autoSaveDelaySelect) {
+    // Select the saved delay option
+    autoSaveDelaySelect.value = String(state.autoSaveDelay);
+    autoSaveDelaySelect.addEventListener("change", () => {
+      state.autoSaveDelay = parseInt(autoSaveDelaySelect.value, 10);
+      localStorage.setItem(AUTO_SAVE_DELAY_KEY, String(state.autoSaveDelay));
+    });
+  }
+}
+
+/**
+ * Called on every editor input event. Resets the debounce timer so that
+ * the file is saved only after the user pauses typing.
+ */
+function scheduleAutoSave() {
+  if (!state.autoSave) return;
+
+  // Cancel any pending auto-save
+  if (autoSaveTimer !== null) {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = null;
+  }
+
+  // Show "pending" indicator
+  showAutoSaveIndicator("pending");
+
+  autoSaveTimer = setTimeout(() => {
+    autoSaveTimer = null;
+    void performAutoSave();
+  }, state.autoSaveDelay);
+}
+
+/**
+ * Performs the actual file write. Mirrors saveCurrentFile() but without
+ * updating the status bar (to avoid interrupting user feedback).
+ */
+async function performAutoSave() {
+  const activeTab = state.tabs.find(t => t.path === state.activeTabId);
+  if (!activeTab || !activeTab.isDirty) {
+    hideAutoSaveIndicator();
+    return;
+  }
+
+  showAutoSaveIndicator("saving");
+
+  try {
+    const writable = await activeTab.handle.createWritable();
+    await writable.write(editor.value);
+    await writable.close();
+
+    activeTab.content = editor.value;
+    activeTab.isDirty = false;
+    renderTabs();
+
+    showAutoSaveIndicator("saved");
+
+    // Hide the saved indicator after 2.5 s
+    clearTimeout(autoSaveHideTimer);
+    autoSaveHideTimer = setTimeout(() => hideAutoSaveIndicator(), 2500);
+  } catch (err) {
+    console.error("Auto-save failed:", err);
+    showAutoSaveIndicator("error");
+    clearTimeout(autoSaveHideTimer);
+    autoSaveHideTimer = setTimeout(() => hideAutoSaveIndicator(), 4000);
+  }
+}
+
+/**
+ * Updates the animated auto-save indicator pill in the toolbar.
+ * @param {'pending'|'saving'|'saved'|'error'} phase
+ */
+function showAutoSaveIndicator(phase) {
+  if (!autoSaveIndicator) return;
+
+  autoSaveIndicator.classList.remove("hidden");
+  autoSaveIndicator.classList.add("inline-flex");
+
+  // Remove all colour classes first
+  autoSaveIndicator.classList.remove(
+    "text-amber-500", "text-[var(--color-accent)]", "text-emerald-500", "text-red-500"
+  );
+  if (autoSaveIndicatorDot) {
+    autoSaveIndicatorDot.classList.remove("animate-pulse");
+  }
+
+  switch (phase) {
+    case "pending":
+      autoSaveIndicator.classList.add("text-amber-500");
+      if (autoSaveIndicatorDot) autoSaveIndicatorDot.classList.add("animate-pulse");
+      if (autoSaveIndicatorText) autoSaveIndicatorText.textContent = "Unsaved";
+      break;
+    case "saving":
+      autoSaveIndicator.classList.add("text-[var(--color-accent)]");
+      if (autoSaveIndicatorDot) autoSaveIndicatorDot.classList.add("animate-pulse");
+      if (autoSaveIndicatorText) autoSaveIndicatorText.textContent = "Saving…";
+      break;
+    case "saved":
+      autoSaveIndicator.classList.add("text-emerald-500");
+      if (autoSaveIndicatorText) autoSaveIndicatorText.textContent = "Saved";
+      break;
+    case "error":
+      autoSaveIndicator.classList.add("text-red-500");
+      if (autoSaveIndicatorText) autoSaveIndicatorText.textContent = "Save failed";
+      break;
+  }
+}
+
+function hideAutoSaveIndicator() {
+  if (!autoSaveIndicator) return;
+  autoSaveIndicator.classList.add("hidden");
+  autoSaveIndicator.classList.remove("inline-flex");
 }
 
 function getClioNotesUrl() {
@@ -1648,7 +1809,7 @@ function clearEditor() {
   editor.value = "";
   insertImageBtn.disabled = true;
   saveBtn.disabled = true;
-  clearImageBlobCache();
+  revokeImageCache();
   renderPreview("");
 }
 
@@ -1711,6 +1872,13 @@ async function saveCurrentFile() {
     setStatus("Open a file first.");
     return;
   }
+
+  // Cancel any pending auto-save — we're doing it manually right now
+  if (autoSaveTimer !== null) {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = null;
+  }
+
   try {
     const writable = await activeTab.handle.createWritable();
     await writable.write(editor.value);
@@ -1721,6 +1889,11 @@ async function saveCurrentFile() {
     renderTabs();
     
     setStatus("Saved " + activeTab.path);
+
+    // Show the "Saved" indicator briefly
+    showAutoSaveIndicator("saved");
+    clearTimeout(autoSaveHideTimer);
+    autoSaveHideTimer = setTimeout(() => hideAutoSaveIndicator(), 2500);
   } catch (error) {
     console.error(error);
     setStatus("Save failed.");
