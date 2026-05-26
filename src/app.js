@@ -1034,7 +1034,10 @@ async function initializeLibrary() {
 
     if (state.libraryFolders.length > 0) {
       await refreshTree();
-      await tryOpenFrontPageForActiveFolder();
+      await restoreTabs();
+      if (state.tabs.length === 0) {
+        await tryOpenFrontPageForActiveFolder();
+      }
     } else {
       setStatus("Open Settings > Library and add a folder to get started.");
     }
@@ -1588,7 +1591,10 @@ async function reconnectLibrary(libraryId) {
     if (hasPermission) {
       await switchActiveLibrary(libraryId);
       await refreshTree();
-      await tryOpenFrontPageForActiveFolder();
+      await restoreTabs();
+      if (state.tabs.length === 0) {
+        await tryOpenFrontPageForActiveFolder();
+      }
     }
   } catch (error) {
     console.error("Reconnection error:", error);
@@ -1834,6 +1840,9 @@ async function restoreTabs() {
   try {
     const paths = JSON.parse(savedPaths);
     for (const path of paths) {
+      if (state.tabs.some(t => t.path === path)) {
+        continue;
+      }
       try {
         const relativePath = removeRootPrefix(path);
         const info = splitParentAndName(relativePath);
@@ -1855,9 +1864,11 @@ async function restoreTabs() {
     }
     
     if (state.tabs.length > 0) {
-      const activeTab = state.tabs.find(t => t.path === savedActiveId) || state.tabs[0];
-      state.activeTabId = activeTab.path;
-      updateEditorWithTabData(activeTab);
+      if (!state.activeTabId) {
+        const activeTab = state.tabs.find(t => t.path === savedActiveId) || state.tabs[0];
+        state.activeTabId = activeTab.path;
+        updateEditorWithTabData(activeTab);
+      }
       renderTabs();
     }
   } catch (err) {
