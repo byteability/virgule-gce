@@ -1648,7 +1648,7 @@ function clearEditor() {
   editor.value = "";
   insertImageBtn.disabled = true;
   saveBtn.disabled = true;
-  clearImageBlobCache();
+  revokeImageCache();
   renderPreview("");
 }
 
