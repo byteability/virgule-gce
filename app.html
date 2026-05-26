@@ -60,6 +60,29 @@
             </div>
           </section>
 
+          <!-- Auto-save Section -->
+          <section class="mb-6 bg-zinc-50 dark:bg-zinc-900/30 rounded-2xl p-5 border border-zinc-200/60 dark:border-zinc-800/60">
+            <div class="flex items-center justify-between mb-1">
+              <h2 class="text-sm font-bold uppercase tracking-wider text-zinc-500">Auto-save</h2>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input id="auto-save-toggle" type="checkbox" class="sr-only peer" checked>
+                <div class="w-10 h-5.5 bg-zinc-200 peer-focus:outline-none rounded-full peer dark:bg-zinc-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all dark:border-zinc-600 peer-checked:bg-[var(--color-accent)]"></div>
+              </label>
+            </div>
+            <p class="text-xs text-zinc-400 mb-4">Automatically save the active document after a short pause in typing.</p>
+            <div id="auto-save-delay-row" class="flex items-center gap-3">
+              <label class="text-xs font-bold text-zinc-400 uppercase tracking-tight shrink-0" for="auto-save-delay">Delay (seconds)</label>
+              <select id="auto-save-delay" class="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--color-accent)]/20 focus:border-[var(--color-accent)] outline-none">
+                <option value="500">0.5s — Instant</option>
+                <option value="1000">1s — Fast</option>
+                <option value="2000">2s — Default</option>
+                <option value="3000" selected>3s — Balanced</option>
+                <option value="5000">5s — Relaxed</option>
+                <option value="10000">10s — Manual-ish</option>
+              </select>
+            </div>
+          </section>
+
           <section class="mb-6 bg-zinc-50 dark:bg-zinc-900/30 rounded-2xl p-5 border border-zinc-200/60 dark:border-zinc-800/60">
             <div class="flex items-center justify-between mb-4">
               <h2 class="text-sm font-bold uppercase tracking-wider text-zinc-500">Privacy Screen</h2>
@@ -217,6 +240,12 @@
           </div>
 
           <div class="flex-1 flex items-center justify-end px-3 gap-3 overflow-hidden">
+             <!-- Auto-save status pill -->
+             <span id="auto-save-indicator" class="hidden items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest shrink-0 transition-all duration-300"
+               aria-live="polite" aria-atomic="true">
+               <span id="auto-save-indicator-dot" class="w-1.5 h-1.5 rounded-full bg-current"></span>
+               <span id="auto-save-indicator-text"></span>
+             </span>
              <span id="status" class="text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500 shrink-0">Ready</span>
              <div class="w-px h-3 bg-zinc-200 dark:bg-zinc-800"></div>
              <div id="file-path" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 truncate select-all">No file opened</div>
