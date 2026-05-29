@@ -162,8 +162,11 @@
       </div>
     </aside>
 
-    <main id="main-content" class="grid grid-cols-1 lg:grid-cols-[48px_320px_1fr] flex-1 min-h-0">
-      <nav class="activity-bar flex flex-col items-center py-4 bg-zinc-100 dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800/80 shrink-0 z-30">
+    <main id="main-content" class="flex-1 min-h-0">
+      <!-- Sidebar backdrop overlay (tablet + phone) -->
+      <div id="sidebar-backdrop"></div>
+
+      <nav class="activity-bar" aria-label="Activity bar">
         <div class="flex flex-col items-center gap-4 flex-1">
           <button id="activity-explorer-btn" class="p-2 text-[var(--color-accent)] rounded-xl transition-colors bg-[var(--color-surface)] dark:bg-zinc-800 shadow-sm border border-[var(--color-border)]" title="Explorer">
             <i data-lucide="layout-dashboard" class="w-6 h-6"></i>
@@ -181,7 +184,7 @@
           </button>
         </div>
       </nav>
-      <aside id="explorer-sidebar" class="explorer flex flex-col border-r border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/20 backdrop-blur-sm lg:h-[calc(100vh-73px)] max-lg:max-h-[30vh] overflow-hidden" aria-label="File and folder explorer">
+      <aside id="explorer-sidebar" class="explorer" aria-label="File and folder explorer">
         <div class="explorer-head p-4 border-b border-zinc-200/60 dark:border-zinc-800/60 shrink-0">
           <div class="flex items-center gap-2 mb-1">
             <i data-lucide="layout-dashboard" class="w-4 h-4 text-zinc-400"></i>
@@ -197,7 +200,7 @@
         </div>
       </aside>
 
-      <aside id="search-sidebar" class="search-sidebar flex flex-col border-r border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/20 backdrop-blur-sm lg:h-[calc(100vh-73px)] max-lg:max-h-[30vh] overflow-hidden" hidden aria-label="Global search">
+      <aside id="search-sidebar" class="search-sidebar" hidden aria-label="Global search">
         <div class="p-4 border-b border-zinc-200/60 dark:border-zinc-800/60 shrink-0">
           <div class="flex items-center gap-2 mb-3">
             <i data-lucide="search" class="w-4 h-4 text-zinc-400"></i>
@@ -216,7 +219,7 @@
         </div>
       </aside>
 
-      <section class="flex flex-col p-4 lg:p-6 gap-4 lg:gap-6 min-h-0 lg:h-[calc(100vh-73px)]" aria-label="Markdown editor and preview">
+      <section aria-label="Markdown editor and preview">
         <div id="tab-bar" class="tab-bar bg-zinc-500/5 dark:bg-zinc-900/20 border-b border-zinc-200 dark:border-zinc-800/80 shrink-0" hidden></div>
 
         <div class="editor-toolbar flex flex-wrap items-center gap-1 p-1.5 bg-white/60 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm backdrop-blur-md shrink-0">

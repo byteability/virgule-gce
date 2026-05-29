@@ -274,6 +274,7 @@ const autoSaveDelayRow = document.getElementById("auto-save-delay-row");
 const autoSaveIndicator = document.getElementById("auto-save-indicator");
 const autoSaveIndicatorDot = document.getElementById("auto-save-indicator-dot");
 const autoSaveIndicatorText = document.getElementById("auto-save-indicator-text");
+const sidebarBackdrop = document.getElementById("sidebar-backdrop");
 
 const LIBRARY_DB_NAME = "clio-notes-db";
 const LIBRARY_DB_VERSION = 1;
@@ -357,6 +358,25 @@ initializeAutoSave();
 
 // ─── Sidebar Switching ───────────────────────────────────────────────────────
 
+/**
+ * Returns true when the viewport is in tablet or phone mode (sidebar is a drawer).
+ */
+function isDrawerMode() {
+  return window.matchMedia("(max-width: 1024px)").matches;
+}
+
+/**
+ * Opens/closes the drawer overlay on tablet and phone.
+ * On desktop this is a no-op (sidebar is always a static column).
+ */
+function setSidebarDrawerOpen(open) {
+  if (open) {
+    mainContent.classList.add("sidebar-open");
+  } else {
+    mainContent.classList.remove("sidebar-open");
+  }
+}
+
 function setSidebar(tab) {
   if (tab === "explorer") {
     explorerSidebar.hidden = false;
@@ -374,10 +394,18 @@ function setSidebar(tab) {
     activityExplorerBtn.classList.add("text-zinc-500", "hover:bg-zinc-100", "dark:hover:bg-zinc-800/60");
     globalSearchInput.focus();
   }
+  // In drawer mode, always open the drawer when switching tabs
+  if (isDrawerMode()) {
+    setSidebarDrawerOpen(true);
+  }
 }
 
-activityExplorerBtn.addEventListener("click", () => setSidebar("explorer"));
-activitySearchBtn.addEventListener("click", () => setSidebar("search"));
+// Close drawer when the backdrop is tapped/clicked
+if (sidebarBackdrop) {
+  sidebarBackdrop.addEventListener("click", () => setSidebarDrawerOpen(false));
+}
+
+
 
 // ─── Global Search ───────────────────────────────────────────────────────────
 
@@ -498,11 +526,35 @@ if (boldBtn) boldBtn.addEventListener("click", () => applyFormatting("**", "**")
 if (italicBtn) italicBtn.addEventListener("click", () => applyFormatting("*", "*"));
 if (strikethroughBtn) strikethroughBtn.addEventListener("click", () => applyFormatting("~~", "~~"));
 if (activityExplorerBtn) {
-  activityExplorerBtn.addEventListener("click", toggleExplorer);
+  // On desktop this toggles the explorer column; on tablet/phone it opens the drawer.
+  activityExplorerBtn.addEventListener("click", () => {
+    if (isDrawerMode()) {
+      // If drawer is already open on explorer, close it; otherwise open it.
+      const drawerOpen = mainContent.classList.contains("sidebar-open");
+      const explorerActive = !explorerSidebar.hidden;
+      if (drawerOpen && explorerActive) {
+        setSidebarDrawerOpen(false);
+      } else {
+        setSidebar("explorer");
+      }
+    } else {
+      toggleExplorer();
+    }
+  });
 }
 if (activitySearchBtn) {
   activitySearchBtn.addEventListener("click", () => {
-    setStatus("Search functionality coming soon!");
+    if (isDrawerMode()) {
+      const drawerOpen = mainContent.classList.contains("sidebar-open");
+      const searchActive = !searchSidebar.hidden;
+      if (drawerOpen && searchActive) {
+        setSidebarDrawerOpen(false);
+      } else {
+        setSidebar("search");
+      }
+    } else {
+      setSidebar("search");
+    }
   });
 }
 editor.addEventListener("input", () => {
@@ -552,6 +604,10 @@ updateWorkspaceVisibility();
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     hideContextMenu();
+    // Close sidebar drawer on tablet/phone
+    if (isDrawerMode()) {
+      setSidebarDrawerOpen(false);
+    }
   }
 
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
@@ -1629,6 +1685,10 @@ async function openMarkdownFile(fileHandle, filePath, clickedButton) {
     renderTabs();
     saveTabState();
     setStatus("File opened in new tab.");
+    // On tablet/phone: auto-close drawer so the editor fills the screen
+    if (isDrawerMode()) {
+      setSidebarDrawerOpen(false);
+    }
   } catch (error) {
     console.error(error);
     setStatus("Unable to open selected file.");
