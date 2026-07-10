@@ -794,7 +794,12 @@ async function applyHomepageSetting() {
 }
 
 function openChromeStartupSettings() {
-  window.open("chrome://settings/onStartup", "_blank", "noopener");
+  if (typeof chrome !== "undefined" && chrome.tabs) {
+    chrome.tabs.create({ url: "chrome://settings/onStartup" });
+  } else {
+    // Fallback for non-extension contexts
+    window.open("chrome://settings/onStartup", "_blank", "noopener");
+  }
 }
 
 function onExplorerContextMenu(event) {
@@ -3373,10 +3378,23 @@ async function initializePrivacyScreen() {
 
     if (tabs.length === 0) {
       tabs = [
-        { title: "Virgule Project", url: "https://github.com/workspace/virgule" },
-        { title: "Google", url: "https://google.com" },
-        { title: "Gemini", url: "https://gemini.google.com" }
+        { title: "Virgule Project", url: "https://github.com/workspace/virgule", groupId: -1 },
+        { title: "Google", url: "https://google.com", groupId: -1 },
+        { title: "Gemini", url: "https://gemini.google.com", groupId: -1 }
       ];
+    }
+
+    // Fetch tab groups if available
+    let tabGroupsMap = {}; // groupId -> group title
+    if (typeof chrome !== "undefined" && chrome.tabGroups) {
+      try {
+        const groups = await chrome.tabGroups.query({ windowId: chrome.windows?.WINDOW_ID_CURRENT });
+        groups.forEach(g => {
+          tabGroupsMap[g.id] = g.title || `Group ${g.id}`;
+        });
+      } catch (err) {
+        console.warn("Could not query tab groups:", err);
+      }
     }
 
     const sessionName = window.prompt("Enter a name for this bookmarks list:");
@@ -3390,12 +3408,46 @@ async function initializePrivacyScreen() {
       const bookmarksDir = await rootFolder.getDirectoryHandle(".bookmarks", { create: true });
       const filename = `${cleanSessionName}.md`;
       const fileHandle = await bookmarksDir.getFileHandle(filename, { create: true });
-      
-      let markdown = `# ${cleanSessionName}\n\n`;
+
+      // Separate grouped and ungrouped tabs
+      // chrome.tabGroups uses groupId === -1 (TAB_ID_NONE) for ungrouped tabs
+      const TAB_GROUP_ID_NONE = -1;
+      const groupedTabs = {}; // groupId -> Tab[]
+      const ungroupedTabs = [];
+
       tabs.forEach(tab => {
-        const title = tab.title || tab.url;
-        markdown += `- [${title}](${tab.url})\n`;
+        const gid = tab.groupId ?? TAB_GROUP_ID_NONE;
+        if (gid !== TAB_GROUP_ID_NONE && tabGroupsMap[gid] !== undefined) {
+          if (!groupedTabs[gid]) groupedTabs[gid] = [];
+          groupedTabs[gid].push(tab);
+        } else {
+          ungroupedTabs.push(tab);
+        }
       });
+
+      let markdown = `# ${cleanSessionName}\n\n`;
+
+      // Write grouped tabs under their group name as a header
+      for (const [gid, groupTabs] of Object.entries(groupedTabs)) {
+        const groupTitle = tabGroupsMap[gid];
+        markdown += `## ${groupTitle}\n\n`;
+        groupTabs.forEach(tab => {
+          const title = tab.title || tab.url;
+          markdown += `- [${title}](${tab.url})\n`;
+        });
+        markdown += "\n";
+      }
+
+      // Write ungrouped tabs
+      if (ungroupedTabs.length > 0) {
+        if (Object.keys(groupedTabs).length > 0) {
+          markdown += `## Ungrouped\n\n`;
+        }
+        ungroupedTabs.forEach(tab => {
+          const title = tab.title || tab.url;
+          markdown += `- [${title}](${tab.url})\n`;
+        });
+      }
 
       const writable = await fileHandle.createWritable();
       await writable.write(markdown);
