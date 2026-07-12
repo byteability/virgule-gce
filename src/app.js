@@ -284,6 +284,14 @@ const autoSaveIndicator = document.getElementById("auto-save-indicator");
 const autoSaveIndicatorDot = document.getElementById("auto-save-indicator-dot");
 const autoSaveIndicatorText = document.getElementById("auto-save-indicator-text");
 
+// Shared in-page dialog (replaces window.alert / confirm / prompt)
+const appDialog = document.getElementById("app-dialog");
+const appDialogMessage = document.getElementById("app-dialog-message");
+const appDialogInput = document.getElementById("app-dialog-input");
+const appDialogOk = document.getElementById("app-dialog-ok");
+const appDialogCancel = document.getElementById("app-dialog-cancel");
+
+
 const LIBRARY_DB_NAME = "clio-notes-db";
 const LIBRARY_DB_VERSION = 1;
 const LIBRARY_STORE_NAME = "libraryFolders";
@@ -346,10 +354,103 @@ const state = {
   autoSaveDelay: 2000
 };
 
+// ─── In-page dialog helpers (replaces window.alert / confirm / prompt) ────────
+// Chrome suppresses native dialogs when the extension tab is not the active tab.
+// These helpers use the <dialog> element instead, which is never suppressed.
+
+/**
+ * @param {string} message
+ * @returns {Promise<void>}
+ */
+function showAlert(message) {
+  return new Promise((resolve) => {
+    appDialogMessage.textContent = message;
+    appDialogInput.classList.add("hidden");
+    appDialogCancel.classList.add("hidden");
+    appDialog.showModal();
+
+    function onOk() {
+      appDialog.close();
+      appDialogOk.removeEventListener("click", onOk);
+      resolve();
+    }
+    appDialogOk.addEventListener("click", onOk);
+  });
+}
+
+/**
+ * @param {string} message
+ * @returns {Promise<boolean>}
+ */
+function showConfirm(message) {
+  return new Promise((resolve) => {
+    appDialogMessage.textContent = message;
+    appDialogInput.classList.add("hidden");
+    appDialogCancel.classList.remove("hidden");
+    appDialog.showModal();
+
+    function onOk() {
+      cleanup();
+      resolve(true);
+    }
+    function onCancel() {
+      cleanup();
+      resolve(false);
+    }
+    function cleanup() {
+      appDialog.close();
+      appDialogOk.removeEventListener("click", onOk);
+      appDialogCancel.removeEventListener("click", onCancel);
+    }
+    appDialogOk.addEventListener("click", onOk);
+    appDialogCancel.addEventListener("click", onCancel);
+  });
+}
+
+/**
+ * @param {string} message
+ * @param {string} [defaultValue]
+ * @returns {Promise<string|null>} resolves with the value, or null if cancelled
+ */
+function showPrompt(message, defaultValue = "") {
+  return new Promise((resolve) => {
+    appDialogMessage.textContent = message;
+    appDialogInput.value = defaultValue;
+    appDialogInput.classList.remove("hidden");
+    appDialogCancel.classList.remove("hidden");
+    appDialog.showModal();
+    // Auto-focus the input after the dialog opens
+    requestAnimationFrame(() => appDialogInput.focus());
+
+    function onOk() {
+      cleanup();
+      resolve(appDialogInput.value);
+    }
+    function onCancel() {
+      cleanup();
+      resolve(null);
+    }
+    function onKeydown(e) {
+      if (e.key === "Enter") { e.preventDefault(); onOk(); }
+      if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+    }
+    function cleanup() {
+      appDialog.close();
+      appDialogOk.removeEventListener("click", onOk);
+      appDialogCancel.removeEventListener("click", onCancel);
+      appDialogInput.removeEventListener("keydown", onKeydown);
+    }
+    appDialogOk.addEventListener("click", onOk);
+    appDialogCancel.addEventListener("click", onCancel);
+    appDialogInput.addEventListener("keydown", onKeydown);
+  });
+}
+
 /** Debounce timer handle for auto-save */
 let autoSaveTimer = null;
 /** Timer handle used to hide the "Saved" indicator after a delay */
 let autoSaveHideTimer = null;
+
 
 settingsBtn.addEventListener("click", toggleSettingsPanel);
 closeSettingsBtn.addEventListener("click", () => setSettingsPanelOpen(false));
@@ -1211,7 +1312,7 @@ async function removeLibraryFolder(folderId) {
     return;
   }
 
-  const confirmed = window.confirm("Remove " + entry.name + " from Library?");
+  const confirmed = await showConfirm("Remove " + entry.name + " from Library?");
   if (!confirmed) {
     return;
   }
@@ -1718,7 +1819,7 @@ async function closeTab(tabId, event) {
 
   const tab = state.tabs[tabIndex];
   if (tab.isDirty) {
-    if (!window.confirm(`File "${tab.path}" has unsaved changes. Close anyway?`)) {
+    if (!await showConfirm(`File "${tab.path}" has unsaved changes. Close anyway?`)) {
       return;
     }
   }
@@ -1955,7 +2056,7 @@ async function createMarkdownFile(destinationPathOverride) {
   try {
     const destinationPath = typeof destinationPathOverride === "string" ? destinationPathOverride : "";
 
-    const inputName = window.prompt("File name (use .md):", "new-note.md");
+    const inputName = await showPrompt("File name (use .md):", "new-note.md");
     if (inputName === null) {
       setStatus("Create file canceled.");
       return;
@@ -2008,7 +2109,7 @@ async function createFolder(destinationPathOverride) {
   try {
     const destinationPath = typeof destinationPathOverride === "string" ? destinationPathOverride : "";
 
-    const inputName = window.prompt("Folder name:", "new-folder");
+    const inputName = await showPrompt("Folder name:", "new-folder");
     if (inputName === null) {
       setStatus("Create folder canceled.");
       return;
@@ -2057,7 +2158,7 @@ async function renameEntry(sourcePath, kind) {
       return;
     }
 
-    const newNameInput = window.prompt("New name:", sourceInfo.name);
+    const newNameInput = await showPrompt("New name:", sourceInfo.name);
     if (newNameInput === null) {
       setStatus("Rename canceled.");
       return;
@@ -2173,7 +2274,7 @@ async function deleteFile(sourcePath) {
     return;
   }
 
-  const confirmed = window.confirm("Move file " + sourcePath + " to Trash?");
+  const confirmed = await showConfirm("Move file " + sourcePath + " to Trash?");
   if (!confirmed) {
     setStatus("Move to Trash canceled.");
     return;
@@ -2216,7 +2317,7 @@ async function deleteFolder(sourcePath) {
     return;
   }
 
-  const confirmed = window.confirm("Move folder " + sourcePath + " and all contents to Trash?");
+  const confirmed = await showConfirm("Move folder " + sourcePath + " and all contents to Trash?");
   if (!confirmed) {
     setStatus("Move to Trash canceled.");
     return;
@@ -3332,7 +3433,7 @@ async function initializePrivacyScreen() {
     if (!text) return;
 
     if (state.libraryFolders.length === 0) {
-      alert("No library folders found. Please add a folder in settings first.");
+      void showAlert("No library folders found. Please add a folder in settings first.");
       return;
     }
 
@@ -3348,7 +3449,7 @@ async function initializePrivacyScreen() {
       await writable.close();
 
       privacyNoteInput.value = "";
-      alert(`Note saved as ${filename} in your primary library!`);
+      void showAlert(`Note saved as ${filename} in your primary library!`);
       
       // Refresh explorer if it's currently showing the primary library
       if (!explorerSidebar.hidden && state.activeLibraryFolderId === state.libraryFolders[0].id) {
@@ -3356,14 +3457,14 @@ async function initializePrivacyScreen() {
       }
     } catch (err) {
       console.error("Error saving quick note:", err);
-      alert("Failed to save note. Please check permissions.");
+      void showAlert("Failed to save note. Please check permissions.");
     }
   });
 
   // Save Bookmarks from Lock Screen
   lockScreenBookmarkBtn?.addEventListener("click", async () => {
     if (state.libraryFolders.length === 0) {
-      alert("No library folders found. Please add a folder in settings first.");
+      void showAlert("No library folders found. Please add a folder in settings first.");
       return;
     }
 
@@ -3397,7 +3498,7 @@ async function initializePrivacyScreen() {
       }
     }
 
-    const sessionName = window.prompt("Enter a name for this bookmarks list:");
+    const sessionName = await showPrompt("Enter a name for this bookmarks list:");
     if (!sessionName || !sessionName.trim()) {
       return;
     }
@@ -3453,14 +3554,14 @@ async function initializePrivacyScreen() {
       await writable.write(markdown);
       await writable.close();
 
-      alert(`Bookmarks saved as "${filename}" in the .bookmarks folder.`);
+      void showAlert(`Bookmarks saved as "${filename}" in the .bookmarks folder.`);
 
       if (!bookmarksSidebar.hidden) {
         void renderBookmarksList();
       }
     } catch (err) {
       console.error("Error saving bookmarks:", err);
-      alert("Failed to save bookmarks. Please ensure storage permissions are granted.");
+      void showAlert("Failed to save bookmarks. Please ensure storage permissions are granted.");
     }
   });
 
@@ -3785,13 +3886,13 @@ async function renderBookmarksList() {
       deleteBtn.title = "Delete Bookmarks";
       deleteBtn.innerHTML = `<i data-lucide="trash-2" class="w-4 h-4"></i>`;
       deleteBtn.addEventListener("click", async () => {
-        if (confirm(`Are you sure you want to delete "${sessionName}"?`)) {
+        if (await showConfirm(`Are you sure you want to delete "${sessionName}"?`)) {
           try {
             await bookmarksDir.removeEntry(fileHandle.name);
             void renderBookmarksList();
           } catch (err) {
             console.error("Error deleting bookmarks file:", err);
-            alert("Failed to delete bookmarks file.");
+            void showAlert("Failed to delete bookmarks file.");
           }
         }
       });
