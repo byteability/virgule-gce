@@ -171,6 +171,9 @@
           <button id="activity-search-btn" class="p-2 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 rounded-xl transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-800/60" title="Search">
             <i data-lucide="search" class="w-6 h-6"></i>
           </button>
+          <button id="activity-bookmarks-btn" class="p-2 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 rounded-xl transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-800/60" title="Bookmarks">
+            <i data-lucide="bookmark" class="w-6 h-6"></i>
+          </button>
         </div>
         <div class="flex flex-col items-center gap-2">
           <button id="privacy-lock-trigger" class="p-2 text-zinc-500 hover:text-[var(--color-accent)] rounded-xl transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-800/60" title="Lock Screen">
@@ -189,7 +192,7 @@
           </div>
           <span id="folder-name" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 truncate block">No folder selected</span>
         </div>
-        <div id="tree-root" class="tree-root overflow-auto p-4 flex-1">
+        <div id="tree-root" class="tree-root overflow-y-auto p-4 flex-1 custom-scrollbar">
           <p class="text-sm text-zinc-500 dark:text-zinc-400 flex flex-col items-center justify-center h-full text-center gap-3 mt-10">
             <i data-lucide="folder-search" class="w-10 h-10 text-zinc-300 dark:text-zinc-600"></i>
             <span>Choose a folder to browse Markdown files.</span>
@@ -212,6 +215,21 @@
           <div class="flex flex-col items-center justify-center h-full text-center gap-3 text-zinc-400 p-4">
             <i data-lucide="search" class="w-10 h-10 opacity-20"></i>
             <p class="text-xs">Search across all your library folders for filenames and content.</p>
+          </div>
+        </div>
+      </aside>
+
+      <aside id="bookmarks-sidebar" class="bookmarks-sidebar flex flex-col border-r border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/20 backdrop-blur-sm lg:h-[calc(100vh-73px)] max-lg:max-h-[30vh] overflow-hidden" hidden aria-label="Bookmarks">
+        <div class="p-4 border-b border-zinc-200/60 dark:border-zinc-800/60 shrink-0">
+          <div class="flex items-center gap-2">
+            <i data-lucide="bookmark" class="w-4 h-4 text-zinc-400"></i>
+            <h2 class="text-sm font-bold m-0 tracking-wide text-zinc-700 dark:text-zinc-300">Bookmarks</h2>
+          </div>
+        </div>
+        <div id="bookmarks-list" class="overflow-auto p-4 flex-1 custom-scrollbar space-y-4">
+          <div class="flex flex-col items-center justify-center h-full text-center gap-3 text-zinc-400">
+            <i data-lucide="bookmark" class="w-10 h-10 opacity-20"></i>
+            <p class="text-xs">No bookmarks saved yet. Click the "Save Opened Tabs" button on the lock screen.</p>
           </div>
         </div>
       </aside>
@@ -337,6 +355,12 @@
     </div>
 
     <div id="privacy-screen" class="fixed inset-0 z-[100] flex flex-col items-center justify-center p-6 transition-all duration-150 opacity-100">
+      <!-- Bookmark Session trigger -->
+      <div class="absolute top-6 right-6 z-20">
+        <button id="lock-screen-bookmark-btn" class="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white text-sm font-bold transition-all backdrop-blur-xl hover:scale-105 active:scale-95 duration-200" title="Save Opened Tabs">
+          <i data-lucide="bookmark" class="w-4 h-4"></i> Save Opened Tabs
+        </button>
+      </div>
       <div class="absolute inset-0 bg-zinc-950/80 backdrop-blur-3xl"></div>
       <div class="absolute inset-0 bg-gradient-to-tr from-[var(--color-accent)]/15 via-transparent to-emerald-500/10"></div>
       
@@ -474,6 +498,20 @@
       </button>
     </div>
 
+    <!-- Shared in-page dialog (replaces window.alert / confirm / prompt) -->
+    <dialog id="app-dialog" class="rounded-xl shadow-2xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] p-0 w-full max-w-sm backdrop:bg-black/50 backdrop:backdrop-blur-sm">
+      <div class="p-5 flex flex-col gap-4">
+        <p id="app-dialog-message" class="text-sm leading-relaxed"></p>
+        <input id="app-dialog-input" type="text"
+          class="hidden w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]" />
+        <div id="app-dialog-actions" class="flex justify-end gap-2">
+          <button id="app-dialog-cancel" class="hidden px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--color-border)] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Cancel</button>
+          <button id="app-dialog-ok" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] transition-colors">OK</button>
+        </div>
+      </div>
+    </dialog>
+
     <script src="/src/main.js" type="module"></script>
+
   </body>
 </html>
