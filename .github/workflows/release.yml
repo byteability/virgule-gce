@@ -20,6 +20,8 @@ jobs:
   auto-tag:
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.new_tag.outputs.tag }}
 
     steps:
       - name: Checkout repository
@@ -79,13 +81,18 @@ jobs:
           git push origin "${{ steps.new_tag.outputs.tag }}"
 
   build-and-release:
-    if: github.event_name != 'pull_request'
+    needs: auto-tag
+    if: |
+      always() &&
+      (github.event_name != 'pull_request' || needs.auto-tag.result == 'success')
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+        with:
+          ref: ${{ github.event_name == 'pull_request' && needs.auto-tag.outputs.tag || github.ref }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -105,7 +112,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3.0.0
         with:
-          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          tag_name: ${{ github.event.inputs.tag_name || needs.auto-tag.outputs.tag || github.ref_name }}
           files: virgule.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
