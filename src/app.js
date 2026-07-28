@@ -3795,12 +3795,18 @@ function hidePrivacyAuth() {
 // ─── Chrome Bookmarks Sessions ────────────────────────────────────────────────
 
 const VIRGULE_SESSIONS_FOLDER_TITLE = "Virgule Sessions";
-const OTHER_BOOKMARKS_FOLDER_ID = "1";
+// Chrome's standard bookmark root ids: "1" is the Bookmarks Bar, "2" is Other Bookmarks.
+const BOOKMARKS_BAR_FOLDER_ID = "1";
+const OTHER_BOOKMARKS_FOLDER_ID = "2";
 
 async function getOrCreateSessionsFolder() {
-  const children = await chrome.bookmarks.getChildren(OTHER_BOOKMARKS_FOLDER_ID);
-  const existing = children.find(node => !node.url && node.title === VIRGULE_SESSIONS_FOLDER_TITLE);
-  if (existing) return existing.id;
+  // Check both roots in case a "Virgule Sessions" folder already exists under the
+  // Bookmarks Bar from an earlier version that created it in the wrong place.
+  for (const rootId of [OTHER_BOOKMARKS_FOLDER_ID, BOOKMARKS_BAR_FOLDER_ID]) {
+    const children = await chrome.bookmarks.getChildren(rootId);
+    const existing = children.find(node => !node.url && node.title === VIRGULE_SESSIONS_FOLDER_TITLE);
+    if (existing) return existing.id;
+  }
   const created = await chrome.bookmarks.create({ parentId: OTHER_BOOKMARKS_FOLDER_ID, title: VIRGULE_SESSIONS_FOLDER_TITLE });
   return created.id;
 }
