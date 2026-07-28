@@ -109,6 +109,8 @@ The extension declares the following permissions in [`public/manifest.json`](pub
 |------------|---------|
 | `tabs` | Query open tabs to save as bookmarks |
 | `tabGroups` | Read tab group names to organise saved bookmarks |
+| `bookmarks` | Save, list, and delete saved tab sessions as native Chrome bookmark folders under "Virgule Sessions" |
+| `storage` | Track whether the one-time legacy markdown-to-bookmarks migration has run |
 
 Any new permission must be added to `manifest.json` **and** documented here.
 

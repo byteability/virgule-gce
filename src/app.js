@@ -3505,11 +3505,6 @@ async function initializePrivacyScreen() {
     const cleanSessionName = sessionName.trim();
 
     try {
-      const rootFolder = state.libraryFolders[0].handle;
-      const bookmarksDir = await rootFolder.getDirectoryHandle(".bookmarks", { create: true });
-      const filename = `${cleanSessionName}.md`;
-      const fileHandle = await bookmarksDir.getFileHandle(filename, { create: true });
-
       // Separate grouped and ungrouped tabs
       // chrome.tabGroups uses groupId === -1 (TAB_ID_NONE) for ungrouped tabs
       const TAB_GROUP_ID_NONE = -1;
@@ -3526,42 +3521,50 @@ async function initializePrivacyScreen() {
         }
       });
 
-      let markdown = `# ${cleanSessionName}\n\n`;
+      const sessionsFolderId = await getOrCreateSessionsFolder();
 
-      // Write grouped tabs under their group name as a header
+      const existingSession = await findSessionFolder(sessionsFolderId, cleanSessionName);
+      if (existingSession) {
+        await chrome.bookmarks.removeTree(existingSession.id);
+      }
+
+      const sessionFolder = await chrome.bookmarks.create({
+        parentId: sessionsFolderId,
+        title: cleanSessionName
+      });
+
+      // Grouped tabs become a subfolder named after their tab group
       for (const [gid, groupTabs] of Object.entries(groupedTabs)) {
-        const groupTitle = tabGroupsMap[gid];
-        markdown += `## ${groupTitle}\n\n`;
-        groupTabs.forEach(tab => {
-          const title = tab.title || tab.url;
-          markdown += `- [${title}](${tab.url})\n`;
+        const groupFolder = await chrome.bookmarks.create({
+          parentId: sessionFolder.id,
+          title: tabGroupsMap[gid]
         });
-        markdown += "\n";
-      }
-
-      // Write ungrouped tabs
-      if (ungroupedTabs.length > 0) {
-        if (Object.keys(groupedTabs).length > 0) {
-          markdown += `## Ungrouped\n\n`;
+        for (const tab of groupTabs) {
+          await chrome.bookmarks.create({
+            parentId: groupFolder.id,
+            title: tab.title || tab.url,
+            url: tab.url
+          });
         }
-        ungroupedTabs.forEach(tab => {
-          const title = tab.title || tab.url;
-          markdown += `- [${title}](${tab.url})\n`;
+      }
+
+      // Ungrouped tabs go directly into the session folder
+      for (const tab of ungroupedTabs) {
+        await chrome.bookmarks.create({
+          parentId: sessionFolder.id,
+          title: tab.title || tab.url,
+          url: tab.url
         });
       }
 
-      const writable = await fileHandle.createWritable();
-      await writable.write(markdown);
-      await writable.close();
-
-      void showAlert(`Bookmarks saved as "${filename}" in the .bookmarks folder.`);
+      void showAlert(`Bookmarks saved as "${cleanSessionName}".`);
 
       if (!bookmarksSidebar.hidden) {
         void renderBookmarksList();
       }
     } catch (err) {
       console.error("Error saving bookmarks:", err);
-      void showAlert("Failed to save bookmarks. Please ensure storage permissions are granted.");
+      void showAlert("Failed to save bookmarks. Please check bookmarks permissions.");
     }
   });
 
@@ -3789,14 +3792,29 @@ function hidePrivacyAuth() {
   }, 500);
 }
 
-async function renderBookmarksList() {
-  if (!bookmarksList) return;
-  bookmarksList.innerHTML = "";
+// ─── Chrome Bookmarks Sessions ────────────────────────────────────────────────
 
-  if (state.libraryFolders.length === 0) {
-    bookmarksList.innerHTML = `<div class="p-4 text-center text-zinc-500"><p class="text-xs">No library folders found. Please add a folder in settings first.</p></div>`;
-    return;
-  }
+const VIRGULE_SESSIONS_FOLDER_TITLE = "Virgule Sessions";
+const OTHER_BOOKMARKS_FOLDER_ID = "1";
+
+async function getOrCreateSessionsFolder() {
+  const children = await chrome.bookmarks.getChildren(OTHER_BOOKMARKS_FOLDER_ID);
+  const existing = children.find(node => !node.url && node.title === VIRGULE_SESSIONS_FOLDER_TITLE);
+  if (existing) return existing.id;
+  const created = await chrome.bookmarks.create({ parentId: OTHER_BOOKMARKS_FOLDER_ID, title: VIRGULE_SESSIONS_FOLDER_TITLE });
+  return created.id;
+}
+
+async function findSessionFolder(sessionsFolderId, name) {
+  const children = await chrome.bookmarks.getChildren(sessionsFolderId);
+  return children.find(node => !node.url && node.title === name);
+}
+
+async function migrateLegacyBookmarkSessions() {
+  const { bookmarksMigrationDone } = await chrome.storage.local.get("bookmarksMigrationDone");
+  if (bookmarksMigrationDone) return;
+
+  if (state.libraryFolders.length === 0) return;
 
   try {
     const rootFolder = state.libraryFolders[0].handle;
@@ -3804,28 +3822,59 @@ async function renderBookmarksList() {
     try {
       bookmarksDir = await rootFolder.getDirectoryHandle(".bookmarks");
     } catch {
-      // .bookmarks doesn't exist yet
+      // .bookmarks doesn't exist - nothing to migrate
     }
 
-    if (!bookmarksDir) {
-      bookmarksList.innerHTML = `
-        <div class="flex flex-col items-center justify-center h-full text-center gap-3 text-zinc-400 p-4">
-          <i data-lucide="bookmark" class="w-10 h-10 opacity-20"></i>
-          <p class="text-xs">No bookmarks saved yet. Click the "Save Opened Tabs" button on the lock screen.</p>
-        </div>
-      `;
-      createIcons({ icons, root: bookmarksList });
-      return;
-    }
+    if (bookmarksDir) {
+      const sessionsFolderId = await getOrCreateSessionsFolder();
 
-    const bookmarkFiles = [];
-    for await (const entry of bookmarksDir.values()) {
-      if (entry.kind === "file" && entry.name.endsWith(".md")) {
-        bookmarkFiles.push(entry);
+      for await (const entry of bookmarksDir.values()) {
+        if (entry.kind !== "file" || !entry.name.endsWith(".md")) continue;
+
+        const sessionName = entry.name.replace(/\.md$/, "");
+        try {
+          const existingSession = await findSessionFolder(sessionsFolderId, sessionName);
+          if (existingSession) continue;
+
+          const file = await entry.getFile();
+          const text = await file.text();
+
+          const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g;
+          const links = [];
+          let match;
+          while ((match = linkRegex.exec(text)) !== null) {
+            links.push({ title: match[1], url: match[2] });
+          }
+
+          const sessionFolder = await chrome.bookmarks.create({ parentId: sessionsFolderId, title: sessionName });
+          for (const link of links) {
+            await chrome.bookmarks.create({ parentId: sessionFolder.id, title: link.title, url: link.url });
+          }
+        } catch (err) {
+          console.error(`Error migrating legacy bookmark session "${sessionName}":`, err);
+        }
       }
     }
 
-    if (bookmarkFiles.length === 0) {
+    await chrome.storage.local.set({ bookmarksMigrationDone: true });
+  } catch (err) {
+    console.error("Error migrating legacy bookmark sessions:", err);
+  }
+}
+
+async function renderBookmarksList() {
+  if (!bookmarksList) return;
+  bookmarksList.innerHTML = "";
+
+  await migrateLegacyBookmarkSessions();
+
+  try {
+    const sessionsFolderId = await getOrCreateSessionsFolder();
+    const sessionFolders = (await chrome.bookmarks.getChildren(sessionsFolderId))
+      .filter(node => !node.url)
+      .sort((a, b) => a.title.localeCompare(b.title));
+
+    if (sessionFolders.length === 0) {
       bookmarksList.innerHTML = `
         <div class="flex flex-col items-center justify-center h-full text-center gap-3 text-zinc-400 p-4">
           <i data-lucide="bookmark" class="w-10 h-10 opacity-20"></i>
@@ -3836,20 +3885,19 @@ async function renderBookmarksList() {
       return;
     }
 
-    bookmarkFiles.sort((a, b) => a.name.localeCompare(b.name));
-
-    for (const fileHandle of bookmarkFiles) {
-      const file = await fileHandle.getFile();
-      const text = await file.text();
-
-      const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g;
+    for (const sessionFolder of sessionFolders) {
+      const [subTree] = await chrome.bookmarks.getSubTree(sessionFolder.id);
       const links = [];
-      let match;
-      while ((match = linkRegex.exec(text)) !== null) {
-        links.push({ title: match[1], url: match[2] });
-      }
+      const collectLinks = (node) => {
+        if (node.url) {
+          links.push({ title: node.title, url: node.url });
+        } else if (node.children) {
+          node.children.forEach(collectLinks);
+        }
+      };
+      (subTree.children || []).forEach(collectLinks);
 
-      const sessionName = fileHandle.name.replace(".md", "");
+      const sessionName = sessionFolder.title;
 
       const card = document.createElement("div");
       card.className = "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/80 rounded-2xl p-4 shadow-sm space-y-3";
@@ -3888,11 +3936,11 @@ async function renderBookmarksList() {
       deleteBtn.addEventListener("click", async () => {
         if (await showConfirm(`Are you sure you want to delete "${sessionName}"?`)) {
           try {
-            await bookmarksDir.removeEntry(fileHandle.name);
+            await chrome.bookmarks.removeTree(sessionFolder.id);
             void renderBookmarksList();
           } catch (err) {
-            console.error("Error deleting bookmarks file:", err);
-            void showAlert("Failed to delete bookmarks file.");
+            console.error("Error deleting bookmarks session:", err);
+            void showAlert("Failed to delete bookmarks session.");
           }
         }
       });
