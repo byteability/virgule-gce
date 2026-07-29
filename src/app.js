@@ -3823,19 +3823,28 @@ function hidePrivacyAuth() {
 // ─── Chrome Bookmarks Sessions ────────────────────────────────────────────────
 
 const VIRGULE_SESSIONS_FOLDER_TITLE = "Virgule Sessions";
-// Chrome's standard bookmark root ids: "1" is the Bookmarks Bar, "2" is Other Bookmarks.
-const BOOKMARKS_BAR_FOLDER_ID = "1";
-const OTHER_BOOKMARKS_FOLDER_ID = "2";
 
 async function getOrCreateSessionsFolder() {
+  // Bookmark root ids ("1", "2", ...) aren't guaranteed to be stable across
+  // browsers/profiles, so discover the actual roots from the live tree instead
+  // of assuming fixed ids. By convention children[0] is the Bookmarks Bar and
+  // children[1] is Other Bookmarks.
+  const [rootNode] = await chrome.bookmarks.getTree();
+  const roots = rootNode.children || [];
+  const otherBookmarks = roots[1] ?? roots[0];
+  if (!otherBookmarks) {
+    throw new Error("Could not locate a bookmarks root folder.");
+  }
+
   // Check both roots in case a "Virgule Sessions" folder already exists under the
   // Bookmarks Bar from an earlier version that created it in the wrong place.
-  for (const rootId of [OTHER_BOOKMARKS_FOLDER_ID, BOOKMARKS_BAR_FOLDER_ID]) {
-    const children = await chrome.bookmarks.getChildren(rootId);
+  const searchOrder = [otherBookmarks, roots[0]].filter((root, i, arr) => root && arr.indexOf(root) === i);
+  for (const root of searchOrder) {
+    const children = await chrome.bookmarks.getChildren(root.id);
     const existing = children.find(node => !node.url && node.title === VIRGULE_SESSIONS_FOLDER_TITLE);
     if (existing) return existing.id;
   }
-  const created = await chrome.bookmarks.create({ parentId: OTHER_BOOKMARKS_FOLDER_ID, title: VIRGULE_SESSIONS_FOLDER_TITLE });
+  const created = await chrome.bookmarks.create({ parentId: otherBookmarks.id, title: VIRGULE_SESSIONS_FOLDER_TITLE });
   return created.id;
 }
 
