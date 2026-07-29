@@ -221,9 +221,17 @@
 
       <aside id="bookmarks-sidebar" class="bookmarks-sidebar flex flex-col border-r border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/20 backdrop-blur-sm lg:h-[calc(100vh-73px)] max-lg:max-h-[30vh] overflow-hidden" hidden aria-label="Bookmarks">
         <div class="p-4 border-b border-zinc-200/60 dark:border-zinc-800/60 shrink-0">
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 mb-3">
             <i data-lucide="bookmark" class="w-4 h-4 text-zinc-400"></i>
             <h2 class="text-sm font-bold m-0 tracking-wide text-zinc-700 dark:text-zinc-300">Bookmarks</h2>
+          </div>
+          <div class="flex items-center gap-1">
+            <button id="bookmarks-tab-sessions" class="flex-1 text-xs font-bold px-3 py-1.5 rounded-lg transition-all text-[var(--color-accent)] bg-[var(--color-surface)] shadow-sm border border-[var(--color-border)]" type="button">
+              Sessions
+            </button>
+            <button id="bookmarks-tab-all" class="flex-1 text-xs font-bold px-3 py-1.5 rounded-lg transition-all text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/60" type="button">
+              All Bookmarks
+            </button>
           </div>
         </div>
         <div id="bookmarks-list" class="overflow-auto p-4 flex-1 custom-scrollbar space-y-4">

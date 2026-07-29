@@ -273,6 +273,8 @@ const explorerSidebar = document.getElementById("explorer-sidebar");
 const searchSidebar = document.getElementById("search-sidebar");
 const bookmarksSidebar = document.getElementById("bookmarks-sidebar");
 const bookmarksList = document.getElementById("bookmarks-list");
+const bookmarksTabSessions = document.getElementById("bookmarks-tab-sessions");
+const bookmarksTabAll = document.getElementById("bookmarks-tab-all");
 const activityBookmarksBtn = document.getElementById("activity-bookmarks-btn");
 const lockScreenBookmarkBtn = document.getElementById("lock-screen-bookmark-btn");
 const globalSearchInput = document.getElementById("global-search-input");
@@ -495,13 +497,39 @@ function setSidebar(tab) {
     bookmarksSidebar.hidden = false;
     activityBookmarksBtn.classList.add(...activeClasses);
     activityBookmarksBtn.classList.remove(...inactiveClasses);
-    void renderBookmarksList();
+    setBookmarksTab("sessions");
   }
 }
 
 activityExplorerBtn.addEventListener("click", () => setSidebar("explorer"));
 activitySearchBtn.addEventListener("click", () => setSidebar("search"));
 activityBookmarksBtn.addEventListener("click", () => setSidebar("bookmarks"));
+
+// ─── Bookmarks Sub-Tabs (Sessions / All Bookmarks) ───────────────────────────
+
+let activeBookmarksTab = "sessions";
+
+function setBookmarksTab(tab) {
+  activeBookmarksTab = tab;
+  const activeClasses = ["text-[var(--color-accent)]", "bg-[var(--color-surface)]", "shadow-sm", "border", "border-[var(--color-border)]"];
+  const inactiveClasses = ["text-zinc-500", "hover:bg-zinc-100", "dark:hover:bg-zinc-800/60"];
+
+  bookmarksTabSessions.classList.remove(...activeClasses, ...inactiveClasses);
+  bookmarksTabAll.classList.remove(...activeClasses, ...inactiveClasses);
+
+  if (tab === "all") {
+    bookmarksTabAll.classList.add(...activeClasses);
+    bookmarksTabSessions.classList.add(...inactiveClasses);
+    void renderAllBookmarksList();
+  } else {
+    bookmarksTabSessions.classList.add(...activeClasses);
+    bookmarksTabAll.classList.add(...inactiveClasses);
+    void renderBookmarksList();
+  }
+}
+
+bookmarksTabSessions.addEventListener("click", () => setBookmarksTab("sessions"));
+bookmarksTabAll.addEventListener("click", () => setBookmarksTab("all"));
 
 // ─── Global Search ───────────────────────────────────────────────────────────
 
@@ -3560,7 +3588,7 @@ async function initializePrivacyScreen() {
       void showAlert(`Bookmarks saved as "${cleanSessionName}".`);
 
       if (!bookmarksSidebar.hidden) {
-        void renderBookmarksList();
+        void (activeBookmarksTab === "all" ? renderAllBookmarksList() : renderBookmarksList());
       }
     } catch (err) {
       console.error("Error saving bookmarks:", err);
@@ -3989,4 +4017,87 @@ async function renderBookmarksList() {
     console.error("Error rendering bookmarks list:", err);
     bookmarksList.innerHTML = `<div class="p-4 text-center text-red-500"><p class="text-xs">Error loading bookmarks. Please check permissions.</p></div>`;
   }
+}
+
+async function renderAllBookmarksList() {
+  if (!bookmarksList) return;
+  bookmarksList.innerHTML = "";
+
+  try {
+    const [rootNode] = await chrome.bookmarks.getTree();
+    const roots = rootNode.children || [];
+
+    if (roots.length === 0) {
+      bookmarksList.innerHTML = `<div class="p-4 text-center text-zinc-400"><p class="text-xs">No bookmarks found.</p></div>`;
+      return;
+    }
+
+    const container = document.createElement("div");
+    container.className = "space-y-1";
+    roots.forEach(root => {
+      container.appendChild(buildBookmarkFolderNode(root, true));
+    });
+    bookmarksList.appendChild(container);
+
+    createIcons({ icons, root: bookmarksList });
+  } catch (err) {
+    console.error("Error rendering all bookmarks:", err);
+    bookmarksList.innerHTML = `<div class="p-4 text-center text-red-500"><p class="text-xs">Error loading bookmarks. Please check permissions.</p></div>`;
+  }
+}
+
+function buildBookmarkFolderNode(folderNode, expanded) {
+  const details = document.createElement("details");
+  details.className = "group";
+  if (expanded) details.open = true;
+
+  const summary = document.createElement("summary");
+  summary.className = "flex items-center gap-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer py-1.5 px-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/60 select-none";
+  summary.innerHTML = `<i data-lucide="folder" class="w-3.5 h-3.5 text-zinc-400 shrink-0"></i><span class="truncate">${escapeHtml(folderNode.title || "(untitled)")}</span>`;
+  details.appendChild(summary);
+
+  const childrenContainer = document.createElement("div");
+  childrenContainer.className = "pl-4 space-y-0.5";
+  details.appendChild(childrenContainer);
+
+  let built = false;
+  const buildChildren = () => {
+    if (built) return;
+    built = true;
+    (folderNode.children || []).forEach(child => {
+      if (child.url) {
+        childrenContainer.appendChild(buildBookmarkLinkNode(child));
+      } else {
+        childrenContainer.appendChild(buildBookmarkFolderNode(child, false));
+      }
+    });
+    createIcons({ icons, root: childrenContainer });
+  };
+
+  if (expanded) {
+    buildChildren();
+  } else {
+    details.addEventListener("toggle", () => {
+      if (details.open) buildChildren();
+    }, { once: false });
+  }
+
+  return details;
+}
+
+function buildBookmarkLinkNode(bookmarkNode) {
+  const a = document.createElement("a");
+  a.href = bookmarkNode.url;
+  a.className = "flex items-center gap-1.5 text-xs text-[var(--color-accent)] hover:underline truncate py-1 px-1";
+  a.title = `${bookmarkNode.title || bookmarkNode.url}\n${bookmarkNode.url}`;
+  a.innerHTML = `<i data-lucide="external-link" class="w-3.5 h-3.5 text-zinc-400 shrink-0"></i><span class="truncate">${escapeHtml(bookmarkNode.title || bookmarkNode.url)}</span>`;
+  a.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (typeof chrome !== "undefined" && chrome.tabs) {
+      void chrome.tabs.create({ url: bookmarkNode.url });
+    } else {
+      window.open(bookmarkNode.url, "_blank");
+    }
+  });
+  return a;
 }
