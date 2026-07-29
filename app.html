@@ -162,7 +162,7 @@
       </div>
     </aside>
 
-    <main id="main-content" class="grid grid-cols-1 lg:grid-cols-[48px_320px_1fr] flex-1 min-h-0">
+    <main id="main-content" class="grid grid-cols-1 lg:grid-cols-[48px_var(--sidebar-width,320px)_1fr] flex-1 min-h-0">
       <nav class="activity-bar flex flex-col items-center py-4 bg-zinc-100 dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800/80 shrink-0 z-30">
         <div class="flex flex-col items-center gap-4 flex-1">
           <button id="activity-explorer-btn" class="p-2 text-[var(--color-accent)] rounded-xl transition-colors bg-[var(--color-surface)] dark:bg-zinc-800 shadow-sm border border-[var(--color-border)]" title="Explorer">
@@ -184,63 +184,64 @@
           </button>
         </div>
       </nav>
-      <aside id="explorer-sidebar" class="explorer flex flex-col border-r border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/20 backdrop-blur-sm lg:h-[calc(100vh-73px)] max-lg:max-h-[30vh] overflow-hidden" aria-label="File and folder explorer">
-        <div class="explorer-head p-4 border-b border-zinc-200/60 dark:border-zinc-800/60 shrink-0">
-          <div class="flex items-center gap-2 mb-1">
-            <i data-lucide="layout-dashboard" class="w-4 h-4 text-zinc-400"></i>
-            <h2 class="text-sm font-bold m-0 tracking-wide text-zinc-700 dark:text-zinc-300">Explorer</h2>
+      <div id="sidebar-panel" class="relative min-h-0 max-lg:max-h-[30vh] lg:h-[calc(100vh-73px)]">
+        <aside id="explorer-sidebar" class="explorer flex flex-col border-r border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/20 backdrop-blur-sm h-full overflow-hidden" aria-label="File and folder explorer">
+          <div class="explorer-head p-4 border-b border-zinc-200/60 dark:border-zinc-800/60 shrink-0">
+            <div class="flex items-center gap-2 mb-1">
+              <i data-lucide="layout-dashboard" class="w-4 h-4 text-zinc-400"></i>
+              <h2 class="text-sm font-bold m-0 tracking-wide text-zinc-700 dark:text-zinc-300">Explorer</h2>
+            </div>
+            <span id="folder-name" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 truncate block">No folder selected</span>
           </div>
-          <span id="folder-name" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 truncate block">No folder selected</span>
-        </div>
-        <div id="tree-root" class="tree-root overflow-y-auto p-4 flex-1 custom-scrollbar">
-          <p class="text-sm text-zinc-500 dark:text-zinc-400 flex flex-col items-center justify-center h-full text-center gap-3 mt-10">
-            <i data-lucide="folder-search" class="w-10 h-10 text-zinc-300 dark:text-zinc-600"></i>
-            <span>Choose a folder to browse Markdown files.</span>
-          </p>
-        </div>
-      </aside>
+          <div id="tree-root" class="tree-root overflow-y-auto p-4 flex-1 custom-scrollbar">
+            <p class="text-sm text-zinc-500 dark:text-zinc-400 flex flex-col items-center justify-center h-full text-center gap-3 mt-10">
+              <i data-lucide="folder-search" class="w-10 h-10 text-zinc-300 dark:text-zinc-600"></i>
+              <span>Choose a folder to browse Markdown files.</span>
+            </p>
+          </div>
+        </aside>
 
-      <aside id="search-sidebar" class="search-sidebar flex flex-col border-r border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/20 backdrop-blur-sm lg:h-[calc(100vh-73px)] max-lg:max-h-[30vh] overflow-hidden" hidden aria-label="Global search">
-        <div class="p-4 border-b border-zinc-200/60 dark:border-zinc-800/60 shrink-0">
-          <div class="flex items-center gap-2 mb-3">
-            <i data-lucide="search" class="w-4 h-4 text-zinc-400"></i>
-            <h2 class="text-sm font-bold m-0 tracking-wide text-zinc-700 dark:text-zinc-300">Search</h2>
+        <aside id="search-sidebar" class="search-sidebar flex flex-col border-r border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/20 backdrop-blur-sm h-full overflow-hidden" hidden aria-label="Global search">
+          <div class="p-4 border-b border-zinc-200/60 dark:border-zinc-800/60 shrink-0">
+            <div class="flex items-center gap-2 mb-3">
+              <i data-lucide="search" class="w-4 h-4 text-zinc-400"></i>
+              <h2 class="text-sm font-bold m-0 tracking-wide text-zinc-700 dark:text-zinc-300">Search</h2>
+            </div>
+            <div class="relative">
+              <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400"></i>
+              <input id="global-search-input" type="text" placeholder="Search notes..." class="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl pl-9 pr-4 py-2 text-sm focus:ring-2 focus:ring-[var(--color-accent)]/20 focus:border-[var(--color-accent)] outline-none" />
+            </div>
           </div>
-          <div class="relative">
-            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400"></i>
-            <input id="global-search-input" type="text" placeholder="Search notes..." class="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl pl-9 pr-4 py-2 text-sm focus:ring-2 focus:ring-[var(--color-accent)]/20 focus:border-[var(--color-accent)] outline-none" />
+          <div id="search-results" class="overflow-auto p-2 flex-1 custom-scrollbar">
+            <div class="flex flex-col items-center justify-center h-full text-center gap-3 text-zinc-400 p-4">
+              <i data-lucide="search" class="w-10 h-10 opacity-20"></i>
+              <p class="text-xs">Search across all your library folders for filenames and content.</p>
+            </div>
           </div>
-        </div>
-        <div id="search-results" class="overflow-auto p-2 flex-1 custom-scrollbar">
-          <div class="flex flex-col items-center justify-center h-full text-center gap-3 text-zinc-400 p-4">
-            <i data-lucide="search" class="w-10 h-10 opacity-20"></i>
-            <p class="text-xs">Search across all your library folders for filenames and content.</p>
-          </div>
-        </div>
-      </aside>
+        </aside>
 
-      <aside id="bookmarks-sidebar" class="bookmarks-sidebar flex flex-col border-r border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/20 backdrop-blur-sm lg:h-[calc(100vh-73px)] max-lg:max-h-[30vh] overflow-hidden" hidden aria-label="Bookmarks">
-        <div class="p-4 border-b border-zinc-200/60 dark:border-zinc-800/60 shrink-0">
-          <div class="flex items-center gap-2 mb-3">
-            <i data-lucide="bookmark" class="w-4 h-4 text-zinc-400"></i>
-            <h2 class="text-sm font-bold m-0 tracking-wide text-zinc-700 dark:text-zinc-300">Bookmarks</h2>
+        <aside id="bookmarks-sidebar" class="bookmarks-sidebar flex flex-col border-r border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/20 backdrop-blur-sm h-full overflow-hidden" hidden aria-label="Bookmarks">
+          <div class="p-4 border-b border-zinc-200/60 dark:border-zinc-800/60 shrink-0">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <i data-lucide="bookmark" class="w-4 h-4 text-zinc-400"></i>
+                <h2 class="text-sm font-bold m-0 tracking-wide text-zinc-700 dark:text-zinc-300">Bookmarks</h2>
+              </div>
+              <button id="new-bookmark-btn" class="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-lg text-[var(--color-accent)] hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-all" type="button" title="New Bookmark">
+                <i data-lucide="bookmark-plus" class="w-3.5 h-3.5"></i> New
+              </button>
+            </div>
           </div>
-          <div class="flex items-center gap-1">
-            <button id="bookmarks-tab-sessions" class="flex-1 text-xs font-bold px-3 py-1.5 rounded-lg transition-all text-[var(--color-accent)] bg-[var(--color-surface)] shadow-sm border border-[var(--color-border)]" type="button">
-              Sessions
-            </button>
-            <button id="bookmarks-tab-all" class="flex-1 text-xs font-bold px-3 py-1.5 rounded-lg transition-all text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/60" type="button">
-              All Bookmarks
-            </button>
+          <div id="bookmarks-list" class="overflow-auto p-4 flex-1 custom-scrollbar space-y-4">
+            <div class="flex flex-col items-center justify-center h-full text-center gap-3 text-zinc-400">
+              <i data-lucide="bookmark" class="w-10 h-10 opacity-20"></i>
+              <p class="text-xs">No bookmarks saved yet. Click the "Save Opened Tabs" button on the lock screen.</p>
+            </div>
           </div>
-        </div>
-        <div id="bookmarks-list" class="overflow-auto p-4 flex-1 custom-scrollbar space-y-4">
-          <div class="flex flex-col items-center justify-center h-full text-center gap-3 text-zinc-400">
-            <i data-lucide="bookmark" class="w-10 h-10 opacity-20"></i>
-            <p class="text-xs">No bookmarks saved yet. Click the "Save Opened Tabs" button on the lock screen.</p>
-          </div>
-        </div>
-      </aside>
+        </aside>
+
+        <div id="sidebar-resizer" class="hidden lg:block absolute top-0 bottom-0 -right-[3px] w-1.5 cursor-col-resize hover:bg-[var(--color-accent)]/40 active:bg-[var(--color-accent)]/60 transition-colors z-20" title="Drag to resize sidebar" role="separator" aria-orientation="vertical"></div>
+      </div>
 
       <section class="flex flex-col p-4 lg:p-6 gap-4 lg:gap-6 min-h-0 lg:h-[calc(100vh-73px)]" aria-label="Markdown editor and preview">
         <div id="tab-bar" class="tab-bar bg-zinc-500/5 dark:bg-zinc-900/20 border-b border-zinc-200 dark:border-zinc-800/80 shrink-0" hidden></div>
@@ -515,6 +516,47 @@
         <div id="app-dialog-actions" class="flex justify-end gap-2">
           <button id="app-dialog-cancel" class="hidden px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--color-border)] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Cancel</button>
           <button id="app-dialog-ok" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] transition-colors">OK</button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Bookmark location picker (reused by New Bookmark and Save Opened Tabs) -->
+    <dialog id="location-picker-dialog" class="rounded-xl shadow-2xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] p-0 w-full max-w-sm backdrop:bg-black/50 backdrop:backdrop-blur-sm">
+      <div class="p-5 flex flex-col gap-3">
+        <p id="location-picker-title" class="text-sm font-bold text-zinc-700 dark:text-zinc-300">Choose a location</p>
+        <div id="location-picker-tree" class="max-h-64 overflow-auto custom-scrollbar space-y-0.5 border border-[var(--color-border)] rounded-lg p-2"></div>
+        <div class="flex justify-end gap-2">
+          <button id="location-picker-cancel" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--color-border)] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Cancel</button>
+          <button id="location-picker-select" type="button" disabled class="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Select</button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- New Bookmark dialog -->
+    <dialog id="new-bookmark-dialog" class="rounded-xl shadow-2xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] p-0 w-full max-w-sm backdrop:bg-black/50 backdrop:backdrop-blur-sm">
+      <div class="p-5 flex flex-col gap-3">
+        <p class="text-sm font-bold text-zinc-700 dark:text-zinc-300">New Bookmark</p>
+        <label class="flex flex-col gap-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+          Name
+          <input id="new-bookmark-name-input" type="text" placeholder="Bookmark name"
+            class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]" />
+        </label>
+        <label class="flex flex-col gap-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+          URL
+          <input id="new-bookmark-url-input" type="text" placeholder="https://example.com"
+            class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]" />
+        </label>
+        <div class="flex flex-col gap-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+          Location
+          <button id="new-bookmark-location-btn" type="button" class="flex items-center justify-between w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-left text-[var(--color-text)] hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-colors">
+            <span id="new-bookmark-location-label" class="truncate text-zinc-400">Choose location...</span>
+            <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-zinc-400 shrink-0"></i>
+          </button>
+        </div>
+        <p id="new-bookmark-error" class="hidden text-xs text-red-500"></p>
+        <div class="flex justify-end gap-2 mt-1">
+          <button id="new-bookmark-cancel" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--color-border)] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Cancel</button>
+          <button id="new-bookmark-save" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] transition-colors">Save</button>
         </div>
       </div>
     </dialog>
