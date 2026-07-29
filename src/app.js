@@ -3905,6 +3905,30 @@ async function migrateLegacyBookmarkSessions() {
   }
 }
 
+function collectBookmarkLinks(node) {
+  const links = [];
+  const visit = (n) => {
+    if (n.url) {
+      links.push({ title: n.title, url: n.url });
+    } else if (n.children) {
+      n.children.forEach(visit);
+    }
+  };
+  (Array.isArray(node) ? node : node.children || []).forEach(visit);
+  return links;
+}
+
+async function openLinksAsTabGroup(links, groupTitle) {
+  if (links.length === 0) return;
+  const tabIds = [];
+  for (const link of links) {
+    const tab = await chrome.tabs.create({ url: link.url });
+    tabIds.push(tab.id);
+  }
+  const groupId = await chrome.tabs.group({ tabIds });
+  await chrome.tabGroups.update(groupId, { title: groupTitle });
+}
+
 async function renderBookmarksList() {
   if (!bookmarksList) return;
   bookmarksList.innerHTML = "";
@@ -3930,15 +3954,7 @@ async function renderBookmarksList() {
 
     for (const sessionFolder of sessionFolders) {
       const [subTree] = await chrome.bookmarks.getSubTree(sessionFolder.id);
-      const links = [];
-      const collectLinks = (node) => {
-        if (node.url) {
-          links.push({ title: node.title, url: node.url });
-        } else if (node.children) {
-          node.children.forEach(collectLinks);
-        }
-      };
-      (subTree.children || []).forEach(collectLinks);
+      const links = collectBookmarkLinks(subTree.children || []);
 
       const sessionName = sessionFolder.title;
 
@@ -3971,6 +3987,15 @@ async function renderBookmarksList() {
         });
       });
       actions.appendChild(openAllBtn);
+
+      const openAsGroupBtn = document.createElement("button");
+      openAsGroupBtn.className = "p-1.5 text-zinc-500 hover:text-[var(--color-accent)] hover:bg-zinc-100 dark:hover:bg-zinc-800/60 rounded-lg transition-all";
+      openAsGroupBtn.title = "Open as Tab Group";
+      openAsGroupBtn.innerHTML = `<i data-lucide="columns" class="w-4 h-4"></i>`;
+      openAsGroupBtn.addEventListener("click", () => {
+        void openLinksAsTabGroup(links, sessionName);
+      });
+      actions.appendChild(openAsGroupBtn);
 
       const deleteBtn = document.createElement("button");
       deleteBtn.className = "p-1.5 text-zinc-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all";
@@ -4062,7 +4087,21 @@ function buildBookmarkFolderNode(folderNode, expanded) {
 
   const summary = document.createElement("summary");
   summary.className = "flex items-center gap-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer py-1.5 px-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/60 select-none";
-  summary.innerHTML = `<i data-lucide="folder" class="w-3.5 h-3.5 text-zinc-400 shrink-0"></i><span class="truncate">${escapeHtml(folderNode.title || "(untitled)")}</span>`;
+  summary.innerHTML = `<i data-lucide="folder" class="w-3.5 h-3.5 text-zinc-400 shrink-0"></i><span class="truncate flex-1">${escapeHtml(folderNode.title || "(untitled)")}</span>`;
+
+  const openAsGroupBtn = document.createElement("button");
+  openAsGroupBtn.type = "button";
+  openAsGroupBtn.className = "p-1 text-zinc-400 hover:text-[var(--color-accent)] hover:bg-zinc-200 dark:hover:bg-zinc-700/60 rounded-md transition-all shrink-0";
+  openAsGroupBtn.title = "Open as Tab Group";
+  openAsGroupBtn.innerHTML = `<i data-lucide="columns" class="w-3.5 h-3.5"></i>`;
+  openAsGroupBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const folderLinks = collectBookmarkLinks(folderNode);
+    void openLinksAsTabGroup(folderLinks, folderNode.title);
+  });
+  summary.appendChild(openAsGroupBtn);
+
   details.appendChild(summary);
 
   const childrenContainer = document.createElement("div");

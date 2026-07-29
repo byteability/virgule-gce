@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Virgule",
-  "version": "2.0.2",
+  "version": "2.2.0",
   "description": "Display, edit, and organize Markdown files with a built-in folder explorer.",
   "action": {
     "default_title": "Open Virgule"
