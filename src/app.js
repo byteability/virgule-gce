@@ -44,13 +44,21 @@ import {
   ExternalLink,
   ChevronDown,
   Sparkles,
-  Bookmark
+  Bookmark,
+  BookmarkPlus,
+  MoreVertical,
+  GripVertical,
+  Link
 } from 'lucide';
 
 const icons = {
   BookOpen,
   Save,
   Bookmark,
+  BookmarkPlus,
+  MoreVertical,
+  GripVertical,
+  Link,
   SlidersHorizontal,
   Settings,
   FolderPlus,
@@ -237,6 +245,7 @@ const editorToolbar = document.querySelector(".editor-toolbar");
 const noNotesPlaceholder = document.getElementById("no-notes-placeholder");
 const contextMenu = document.getElementById("context-menu");
 const contextMenuItems = Array.from(contextMenu.querySelectorAll(".context-menu-item"));
+const sidebarResizer = document.getElementById("sidebar-resizer");
 const activityExplorerBtn = document.getElementById("activity-explorer-btn");
 const activitySearchBtn = document.getElementById("activity-search-btn");
 const mainContent = document.getElementById("main-content");
@@ -273,8 +282,7 @@ const explorerSidebar = document.getElementById("explorer-sidebar");
 const searchSidebar = document.getElementById("search-sidebar");
 const bookmarksSidebar = document.getElementById("bookmarks-sidebar");
 const bookmarksList = document.getElementById("bookmarks-list");
-const bookmarksTabSessions = document.getElementById("bookmarks-tab-sessions");
-const bookmarksTabAll = document.getElementById("bookmarks-tab-all");
+const newBookmarkBtn = document.getElementById("new-bookmark-btn");
 const activityBookmarksBtn = document.getElementById("activity-bookmarks-btn");
 const lockScreenBookmarkBtn = document.getElementById("lock-screen-bookmark-btn");
 const globalSearchInput = document.getElementById("global-search-input");
@@ -293,6 +301,23 @@ const appDialogInput = document.getElementById("app-dialog-input");
 const appDialogOk = document.getElementById("app-dialog-ok");
 const appDialogCancel = document.getElementById("app-dialog-cancel");
 
+// Bookmark location picker dialog (reused by New Bookmark and Save Opened Tabs)
+const locationPickerDialog = document.getElementById("location-picker-dialog");
+const locationPickerTitle = document.getElementById("location-picker-title");
+const locationPickerTree = document.getElementById("location-picker-tree");
+const locationPickerCancel = document.getElementById("location-picker-cancel");
+const locationPickerSelect = document.getElementById("location-picker-select");
+
+// New Bookmark dialog
+const newBookmarkDialog = document.getElementById("new-bookmark-dialog");
+const newBookmarkNameInput = document.getElementById("new-bookmark-name-input");
+const newBookmarkUrlInput = document.getElementById("new-bookmark-url-input");
+const newBookmarkLocationBtn = document.getElementById("new-bookmark-location-btn");
+const newBookmarkLocationLabel = document.getElementById("new-bookmark-location-label");
+const newBookmarkError = document.getElementById("new-bookmark-error");
+const newBookmarkCancel = document.getElementById("new-bookmark-cancel");
+const newBookmarkSave = document.getElementById("new-bookmark-save");
+
 
 const LIBRARY_DB_NAME = "clio-notes-db";
 const LIBRARY_DB_VERSION = 1;
@@ -303,6 +328,9 @@ const TRASH_DIR_NAME = ".clio-trash";
 const HOMEPAGE_ENABLED_KEY = "clio-notes-homepage-enabled";
 const EXPANDED_FOLDERS_KEY = "clio-notes-expanded-folders";
 const EXPLORER_VISIBLE_KEY = "clio-notes-explorer-visible";
+const SIDEBAR_WIDTH_KEY = "clio-notes-sidebar-width";
+const SIDEBAR_MIN_WIDTH = 240;
+const SIDEBAR_MAX_WIDTH = 560;
 const OPEN_TABS_KEY = "clio-notes-open-tabs";
 const ACTIVE_TAB_KEY = "clio-notes-active-tab";
 const THEME_KEY = "clio-notes-theme";
@@ -497,39 +525,13 @@ function setSidebar(tab) {
     bookmarksSidebar.hidden = false;
     activityBookmarksBtn.classList.add(...activeClasses);
     activityBookmarksBtn.classList.remove(...inactiveClasses);
-    setBookmarksTab("sessions");
+    void renderAllBookmarksList();
   }
 }
 
 activityExplorerBtn.addEventListener("click", () => setSidebar("explorer"));
 activitySearchBtn.addEventListener("click", () => setSidebar("search"));
 activityBookmarksBtn.addEventListener("click", () => setSidebar("bookmarks"));
-
-// ─── Bookmarks Sub-Tabs (Sessions / All Bookmarks) ───────────────────────────
-
-let activeBookmarksTab = "sessions";
-
-function setBookmarksTab(tab) {
-  activeBookmarksTab = tab;
-  const activeClasses = ["text-[var(--color-accent)]", "bg-[var(--color-surface)]", "shadow-sm", "border", "border-[var(--color-border)]"];
-  const inactiveClasses = ["text-zinc-500", "hover:bg-zinc-100", "dark:hover:bg-zinc-800/60"];
-
-  bookmarksTabSessions.classList.remove(...activeClasses, ...inactiveClasses);
-  bookmarksTabAll.classList.remove(...activeClasses, ...inactiveClasses);
-
-  if (tab === "all") {
-    bookmarksTabAll.classList.add(...activeClasses);
-    bookmarksTabSessions.classList.add(...inactiveClasses);
-    void renderAllBookmarksList();
-  } else {
-    bookmarksTabSessions.classList.add(...activeClasses);
-    bookmarksTabAll.classList.add(...inactiveClasses);
-    void renderBookmarksList();
-  }
-}
-
-bookmarksTabSessions.addEventListener("click", () => setBookmarksTab("sessions"));
-bookmarksTabAll.addEventListener("click", () => setBookmarksTab("all"));
 
 // ─── Global Search ───────────────────────────────────────────────────────────
 
@@ -698,6 +700,42 @@ void initializeLibrary();
 const savedExplorerVisible = localStorage.getItem(EXPLORER_VISIBLE_KEY);
 state.explorerVisible = savedExplorerVisible === null ? true : savedExplorerVisible === "true";
 updateExplorerVisibility();
+
+// ─── Sidebar resizing ───────────────────────────────────────────────────────
+
+function applySidebarWidth(width) {
+  const clamped = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
+  document.documentElement.style.setProperty("--sidebar-width", `${clamped}px`);
+  return clamped;
+}
+
+const savedSidebarWidth = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) || "", 10);
+applySidebarWidth(Number.isFinite(savedSidebarWidth) ? savedSidebarWidth : 320);
+
+if (sidebarResizer) {
+  let resizingSidebar = false;
+
+  sidebarResizer.addEventListener("mousedown", (e) => {
+    resizingSidebar = true;
+    e.preventDefault();
+    document.body.classList.add("select-none");
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!resizingSidebar) return;
+    const activityBarWidth = 48;
+    const width = e.clientX - mainContent.getBoundingClientRect().left - activityBarWidth;
+    applySidebarWidth(width);
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (!resizingSidebar) return;
+    resizingSidebar = false;
+    document.body.classList.remove("select-none");
+    const current = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-width"), 10);
+    if (Number.isFinite(current)) localStorage.setItem(SIDEBAR_WIDTH_KEY, String(current));
+  });
+}
 
 createIcons({ icons });
 updateWorkspaceVisibility();
@@ -3532,6 +3570,9 @@ async function initializePrivacyScreen() {
     }
     const cleanSessionName = sessionName.trim();
 
+    const destination = await pickBookmarkLocation("Choose where to save this bookmarks list", null);
+    if (!destination) return;
+
     try {
       // Separate grouped and ungrouped tabs
       // chrome.tabGroups uses groupId === -1 (TAB_ID_NONE) for ungrouped tabs
@@ -3549,15 +3590,10 @@ async function initializePrivacyScreen() {
         }
       });
 
-      const sessionsFolderId = await getOrCreateSessionsFolder();
-
-      const existingSession = await findSessionFolder(sessionsFolderId, cleanSessionName);
-      if (existingSession) {
-        await chrome.bookmarks.removeTree(existingSession.id);
-      }
-
+      // Duplicate folder names are valid in Chrome bookmarks, so this always creates
+      // a new folder rather than replacing an existing same-named one at the destination.
       const sessionFolder = await chrome.bookmarks.create({
-        parentId: sessionsFolderId,
+        parentId: destination.id,
         title: cleanSessionName
       });
 
@@ -3588,7 +3624,7 @@ async function initializePrivacyScreen() {
       void showAlert(`Bookmarks saved as "${cleanSessionName}".`);
 
       if (!bookmarksSidebar.hidden) {
-        void (activeBookmarksTab === "all" ? renderAllBookmarksList() : renderBookmarksList());
+        void renderAllBookmarksList();
       }
     } catch (err) {
       console.error("Error saving bookmarks:", err);
@@ -3929,137 +3965,178 @@ async function openLinksAsTabGroup(links, groupTitle) {
   await chrome.tabGroups.update(groupId, { title: groupTitle });
 }
 
-async function renderBookmarksList() {
-  if (!bookmarksList) return;
-  bookmarksList.innerHTML = "";
+function isManagedBookmarkFolder(node) {
+  return node.unmodifiable === "managed";
+}
 
-  await migrateLegacyBookmarkSessions();
+function isBookmarkNodeOrDescendant(node, targetId) {
+  if (node.id === targetId) return true;
+  return (node.children || []).some(child => !child.url && isBookmarkNodeOrDescendant(child, targetId));
+}
 
-  try {
-    const sessionsFolderId = await getOrCreateSessionsFolder();
-    const sessionFolders = (await chrome.bookmarks.getChildren(sessionsFolderId))
-      .filter(node => !node.url)
-      .sort((a, b) => a.title.localeCompare(b.title));
-
-    if (sessionFolders.length === 0) {
-      bookmarksList.innerHTML = `
-        <div class="flex flex-col items-center justify-center h-full text-center gap-3 text-zinc-400 p-4">
-          <i data-lucide="bookmark" class="w-10 h-10 opacity-20"></i>
-          <p class="text-xs">No bookmarks saved yet. Click the "Save Opened Tabs" button on the lock screen.</p>
-        </div>
-      `;
-      createIcons({ icons, root: bookmarksList });
-      return;
+function countBookmarkSubtree(node) {
+  let bookmarks = 0;
+  let folders = 0;
+  (node.children || []).forEach(child => {
+    if (child.url) {
+      bookmarks++;
+    } else {
+      folders++;
+      const nested = countBookmarkSubtree(child);
+      bookmarks += nested.bookmarks;
+      folders += nested.folders;
     }
+  });
+  return { bookmarks, folders };
+}
 
-    for (const sessionFolder of sessionFolders) {
-      const [subTree] = await chrome.bookmarks.getSubTree(sessionFolder.id);
-      const links = collectBookmarkLinks(subTree.children || []);
+function formatBookmarkDeleteMessage(name, counts) {
+  const parts = [];
+  if (counts.bookmarks > 0) parts.push(`${counts.bookmarks} bookmark${counts.bookmarks === 1 ? "" : "s"}`);
+  if (counts.folders > 0) parts.push(`${counts.folders} subfolder${counts.folders === 1 ? "" : "s"}`);
+  const detail = parts.length > 0 ? ` This will permanently delete ${parts.join(" and ")}.` : "";
+  return `Delete "${name}"?${detail}`;
+}
 
-      const sessionName = sessionFolder.title;
+// ─── Row overflow (⋮) menu ─────────────────────────────────────────────────
+// Built fresh each time it opens rather than kept as persistent per-node DOM.
 
-      const card = document.createElement("div");
-      card.className = "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/80 rounded-2xl p-4 shadow-sm space-y-3";
+let openRowMenuEl = null;
 
-      const header = document.createElement("div");
-      header.className = "flex items-center justify-between gap-2";
-      
-      const titleEl = document.createElement("h3");
-      titleEl.className = "text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate";
-      titleEl.textContent = sessionName;
-      header.appendChild(titleEl);
+function closeRowMenu() {
+  if (openRowMenuEl) {
+    openRowMenuEl.remove();
+    openRowMenuEl = null;
+  }
+  document.removeEventListener("mousedown", onRowMenuOutsideClick, true);
+  document.removeEventListener("keydown", onRowMenuEscape, true);
+}
 
-      const actions = document.createElement("div");
-      actions.className = "flex items-center gap-1.5 shrink-0";
+function onRowMenuOutsideClick(e) {
+  if (openRowMenuEl && !openRowMenuEl.contains(e.target)) closeRowMenu();
+}
 
-      const openAllBtn = document.createElement("button");
-      openAllBtn.className = "p-1.5 text-zinc-500 hover:text-[var(--color-accent)] hover:bg-zinc-100 dark:hover:bg-zinc-800/60 rounded-lg transition-all";
-      openAllBtn.title = "Open All Tabs";
-      openAllBtn.innerHTML = `<i data-lucide="external-link" class="w-4 h-4"></i>`;
-      openAllBtn.addEventListener("click", () => {
-        if (links.length === 0) return;
-        links.forEach(link => {
-          if (typeof chrome !== "undefined" && chrome.tabs) {
-            void chrome.tabs.create({ url: link.url });
-          } else {
-            window.open(link.url, "_blank");
-          }
-        });
-      });
-      actions.appendChild(openAllBtn);
+function onRowMenuEscape(e) {
+  if (e.key === "Escape") closeRowMenu();
+}
 
-      const openAsGroupBtn = document.createElement("button");
-      openAsGroupBtn.className = "p-1.5 text-zinc-500 hover:text-[var(--color-accent)] hover:bg-zinc-100 dark:hover:bg-zinc-800/60 rounded-lg transition-all";
-      openAsGroupBtn.title = "Open as Tab Group";
-      openAsGroupBtn.innerHTML = `<i data-lucide="columns" class="w-4 h-4"></i>`;
-      openAsGroupBtn.addEventListener("click", () => {
-        void openLinksAsTabGroup(links, sessionName);
-      });
-      actions.appendChild(openAsGroupBtn);
+function openRowMenu(anchorEl, items) {
+  closeRowMenu();
+  const menu = document.createElement("div");
+  menu.className = "fixed z-50 flex flex-col gap-0.5 min-w-[170px] p-1.5 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl";
+  items.forEach(item => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `w-full text-left px-2.5 py-1.5 text-xs rounded-lg transition-colors flex items-center gap-2 ${item.danger ? "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30" : "text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800/60"}`;
+    btn.innerHTML = `<i data-lucide="${item.icon}" class="w-3.5 h-3.5 shrink-0"></i><span class="truncate">${escapeHtml(item.label)}</span>`;
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeRowMenu();
+      item.onClick();
+    });
+    menu.appendChild(btn);
+  });
+  document.body.appendChild(menu);
+  createIcons({ icons, root: menu });
 
-      const deleteBtn = document.createElement("button");
-      deleteBtn.className = "p-1.5 text-zinc-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all";
-      deleteBtn.title = "Delete Bookmarks";
-      deleteBtn.innerHTML = `<i data-lucide="trash-2" class="w-4 h-4"></i>`;
-      deleteBtn.addEventListener("click", async () => {
-        if (await showConfirm(`Are you sure you want to delete "${sessionName}"?`)) {
-          try {
-            await chrome.bookmarks.removeTree(sessionFolder.id);
-            void renderBookmarksList();
-          } catch (err) {
-            console.error("Error deleting bookmarks session:", err);
-            void showAlert("Failed to delete bookmarks session.");
-          }
-        }
-      });
-      actions.appendChild(deleteBtn);
+  const anchorRect = anchorEl.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  let top = anchorRect.bottom + 4;
+  let left = anchorRect.right - menuRect.width;
+  if (top + menuRect.height > window.innerHeight) top = Math.max(4, anchorRect.top - menuRect.height - 4);
+  if (left < 4) left = 4;
+  menu.style.top = `${top}px`;
+  menu.style.left = `${left}px`;
 
-      header.appendChild(actions);
-      card.appendChild(header);
+  openRowMenuEl = menu;
+  // Defer listener attachment so the click that opened the menu doesn't also close it.
+  setTimeout(() => {
+    document.addEventListener("mousedown", onRowMenuOutsideClick, true);
+    document.addEventListener("keydown", onRowMenuEscape, true);
+  }, 0);
+}
 
-      const linksContainer = document.createElement("ul");
-      linksContainer.className = "space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar pr-1";
+// ─── Drag-and-drop move (reorder + reparent) ───────────────────────────────
 
-      if (links.length === 0) {
-        const emptyLi = document.createElement("li");
-        emptyLi.className = "text-xs text-zinc-400 italic";
-        emptyLi.textContent = "No links in this bookmarks list.";
-        linksContainer.appendChild(emptyLi);
-      } else {
-        links.forEach(link => {
-          const li = document.createElement("li");
-          li.className = "text-xs flex items-center gap-1.5";
-          
-          const a = document.createElement("a");
-          a.href = link.url;
-          a.target = "_blank";
-          a.className = "text-[var(--color-accent)] hover:underline truncate flex-1 font-medium";
-          a.textContent = link.title;
-          a.title = `${link.title}\n${link.url}`;
-          li.appendChild(a);
+let dragCtx = null; // { node, isFolder, rowEl, parentInfo, onMoved }
+let dropIndicatorEl = null;
+let hoverExpandTimer = null;
+let hoverExpandFolderId = null;
 
-          linksContainer.appendChild(li);
-        });
-      }
+function getDropIndicator() {
+  if (!dropIndicatorEl) {
+    dropIndicatorEl = document.createElement("div");
+    dropIndicatorEl.className = "h-0.5 rounded-full bg-[var(--color-accent)] mx-1 pointer-events-none";
+  }
+  return dropIndicatorEl;
+}
 
-      card.appendChild(linksContainer);
-      bookmarksList.appendChild(card);
-    }
-
-    createIcons({ icons, root: bookmarksList });
-  } catch (err) {
-    console.error("Error rendering bookmarks list:", err);
-    bookmarksList.innerHTML = `<div class="p-4 text-center text-red-500"><p class="text-xs">Error loading bookmarks. Please check permissions.</p></div>`;
+function clearDropIndicator() {
+  if (dropIndicatorEl && dropIndicatorEl.parentNode) {
+    dropIndicatorEl.parentNode.removeChild(dropIndicatorEl);
   }
 }
+
+function clearReparentHighlight() {
+  document.querySelectorAll(".bookmark-drop-into").forEach(el => {
+    el.classList.remove("bookmark-drop-into", "bg-[var(--color-accent)]/10", "ring-1", "ring-[var(--color-accent)]");
+  });
+}
+
+function clearHoverExpandTimer() {
+  if (hoverExpandTimer) {
+    clearTimeout(hoverExpandTimer);
+    hoverExpandTimer = null;
+    hoverExpandFolderId = null;
+  }
+}
+
+/** Counts real bookmark rows (not the drop indicator) preceding `beforeRowEl` within `containerEl`, excluding `excludeRowEl` from the count. Excluding the dragged row itself sidesteps the "index shifts after removal" gotcha of chrome.bookmarks.move. */
+function computeRowIndex(containerEl, beforeRowEl, excludeRowEl) {
+  const rows = Array.from(containerEl.children).filter(el => el.dataset && el.dataset.bookmarkRow === "true" && el !== excludeRowEl);
+  if (!beforeRowEl) return rows.length;
+  const idx = rows.indexOf(beforeRowEl);
+  return idx === -1 ? rows.length : idx;
+}
+
+async function performBookmarkMove(targetParentNode, targetContainer, beforeRowEl) {
+  if (!dragCtx) return;
+  const { node, isFolder, rowEl, parentInfo: sourceParentInfo, onMoved } = dragCtx;
+  if (node.id === targetParentNode.id) return;
+  if (isFolder && isBookmarkNodeOrDescendant(node, targetParentNode.id)) return;
+
+  const index = computeRowIndex(targetContainer, beforeRowEl, rowEl);
+  try {
+    await chrome.bookmarks.move(node.id, { parentId: targetParentNode.id, index });
+
+    if (sourceParentInfo?.node?.children) {
+      const i = sourceParentInfo.node.children.indexOf(node);
+      if (i !== -1) sourceParentInfo.node.children.splice(i, 1);
+    }
+    targetParentNode.children = targetParentNode.children || [];
+    targetParentNode.children.splice(Math.min(index, targetParentNode.children.length), 0, node);
+
+    if (beforeRowEl) targetContainer.insertBefore(rowEl, beforeRowEl);
+    else targetContainer.appendChild(rowEl);
+
+    onMoved?.({ id: targetParentNode.id, container: targetContainer, node: targetParentNode });
+  } catch (err) {
+    console.error("Error moving bookmark:", err);
+    void showAlert("Failed to move bookmark.");
+  }
+}
+
+// ─── Main bookmarks tree ────────────────────────────────────────────────────
 
 async function renderAllBookmarksList() {
   if (!bookmarksList) return;
   bookmarksList.innerHTML = "";
+  closeRowMenu();
 
   try {
     const [rootNode] = await chrome.bookmarks.getTree();
-    const roots = rootNode.children || [];
+    const roots = (rootNode.children || []).filter(root => !isManagedBookmarkFolder(root));
 
     if (roots.length === 0) {
       bookmarksList.innerHTML = `<div class="p-4 text-center text-zinc-400"><p class="text-xs">No bookmarks found.</p></div>`;
@@ -4069,7 +4146,7 @@ async function renderAllBookmarksList() {
     const container = document.createElement("div");
     container.className = "space-y-1";
     roots.forEach(root => {
-      container.appendChild(buildBookmarkFolderNode(root, true));
+      container.appendChild(buildBookmarkFolderNode(root, true, { id: rootNode.id, container, node: rootNode }, true));
     });
     bookmarksList.appendChild(container);
 
@@ -4080,14 +4157,33 @@ async function renderAllBookmarksList() {
   }
 }
 
-function buildBookmarkFolderNode(folderNode, expanded) {
+function buildBookmarkFolderNode(folderNode, expanded, parentInfo, isRoot = false) {
+  let currentParentInfo = parentInfo;
+
   const details = document.createElement("details");
   details.className = "group";
+  details.dataset.bookmarkRow = "true";
   if (expanded) details.open = true;
 
   const summary = document.createElement("summary");
   summary.className = "flex items-center gap-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer py-1.5 px-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/60 select-none";
-  summary.innerHTML = `<i data-lucide="folder" class="w-3.5 h-3.5 text-zinc-400 shrink-0"></i><span class="truncate flex-1">${escapeHtml(folderNode.title || "(untitled)")}</span>`;
+
+  if (!isRoot) {
+    const handle = document.createElement("i");
+    handle.setAttribute("data-lucide", "grip-vertical");
+    handle.className = "w-3 h-3 text-zinc-300 dark:text-zinc-600 shrink-0 cursor-grab";
+    summary.appendChild(handle);
+  }
+
+  const folderIcon = document.createElement("i");
+  folderIcon.setAttribute("data-lucide", "folder");
+  folderIcon.className = "w-3.5 h-3.5 text-zinc-400 shrink-0";
+  summary.appendChild(folderIcon);
+
+  const titleSpan = document.createElement("span");
+  titleSpan.className = "truncate flex-1";
+  titleSpan.textContent = folderNode.title || "(untitled)";
+  summary.appendChild(titleSpan);
 
   const openAsGroupBtn = document.createElement("button");
   openAsGroupBtn.type = "button";
@@ -4102,6 +4198,13 @@ function buildBookmarkFolderNode(folderNode, expanded) {
   });
   summary.appendChild(openAsGroupBtn);
 
+  const menuBtn = document.createElement("button");
+  menuBtn.type = "button";
+  menuBtn.className = "p-1 text-zinc-400 hover:text-[var(--color-accent)] hover:bg-zinc-200 dark:hover:bg-zinc-700/60 rounded-md transition-all shrink-0";
+  menuBtn.title = "More actions";
+  menuBtn.innerHTML = `<i data-lucide="more-vertical" class="w-3.5 h-3.5"></i>`;
+  summary.appendChild(menuBtn);
+
   details.appendChild(summary);
 
   const childrenContainer = document.createElement("div");
@@ -4113,13 +4216,19 @@ function buildBookmarkFolderNode(folderNode, expanded) {
     if (built) return;
     built = true;
     (folderNode.children || []).forEach(child => {
+      if (isManagedBookmarkFolder(child)) return;
       if (child.url) {
-        childrenContainer.appendChild(buildBookmarkLinkNode(child));
+        childrenContainer.appendChild(buildBookmarkLinkNode(child, { id: folderNode.id, container: childrenContainer, node: folderNode }));
       } else {
-        childrenContainer.appendChild(buildBookmarkFolderNode(child, false));
+        childrenContainer.appendChild(buildBookmarkFolderNode(child, false, { id: folderNode.id, container: childrenContainer, node: folderNode }));
       }
     });
     createIcons({ icons, root: childrenContainer });
+  };
+
+  const ensureExpanded = () => {
+    buildChildren();
+    details.open = true;
   };
 
   if (expanded) {
@@ -4130,13 +4239,189 @@ function buildBookmarkFolderNode(folderNode, expanded) {
     }, { once: false });
   }
 
+  async function createChildFolder() {
+    const name = await showPrompt("Enter a name for the new folder:");
+    if (!name || !name.trim()) return;
+    try {
+      const created = await chrome.bookmarks.create({ parentId: folderNode.id, title: name.trim() });
+      const newData = { id: created.id, title: created.title, children: [] };
+      folderNode.children = folderNode.children || [];
+      folderNode.children.push(newData);
+      ensureExpanded();
+      const newRow = buildBookmarkFolderNode(newData, false, { id: folderNode.id, container: childrenContainer, node: folderNode });
+      childrenContainer.appendChild(newRow);
+      createIcons({ icons, root: newRow });
+    } catch (err) {
+      console.error("Error creating bookmark folder:", err);
+      void showAlert("Failed to create folder.");
+    }
+  }
+
+  async function renameFolder() {
+    const newTitle = await showPrompt("Rename folder:", folderNode.title || "");
+    if (newTitle === null) return;
+    const trimmed = newTitle.trim();
+    if (!trimmed || trimmed === folderNode.title) return;
+    try {
+      await chrome.bookmarks.update(folderNode.id, { title: trimmed });
+      folderNode.title = trimmed;
+      titleSpan.textContent = trimmed;
+    } catch (err) {
+      console.error("Error renaming folder:", err);
+      void showAlert("Failed to rename folder.");
+    }
+  }
+
+  async function deleteFolder() {
+    let counts = { bookmarks: 0, folders: 0 };
+    try {
+      const [subTree] = await chrome.bookmarks.getSubTree(folderNode.id);
+      counts = countBookmarkSubtree(subTree);
+    } catch (err) {
+      console.error("Error counting folder contents:", err);
+    }
+    const confirmed = await showConfirm(formatBookmarkDeleteMessage(folderNode.title, counts));
+    if (!confirmed) return;
+    try {
+      await chrome.bookmarks.removeTree(folderNode.id);
+      if (currentParentInfo?.node?.children) {
+        const i = currentParentInfo.node.children.indexOf(folderNode);
+        if (i !== -1) currentParentInfo.node.children.splice(i, 1);
+      }
+      details.remove();
+    } catch (err) {
+      console.error("Error deleting bookmark folder:", err);
+      void showAlert("Failed to delete folder.");
+    }
+  }
+
+  menuBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const items = [
+      { icon: "folder-plus", label: "New Folder", onClick: () => void createChildFolder() },
+      { icon: "bookmark-plus", label: "New Bookmark", onClick: () => openNewBookmarkDialog({ id: folderNode.id, title: folderNode.title }, (destinationId, createdNode) => {
+          if (destinationId === folderNode.id) {
+            ensureExpanded();
+            const newRow = buildBookmarkLinkNode(createdNode, { id: folderNode.id, container: childrenContainer, node: folderNode });
+            childrenContainer.appendChild(newRow);
+            createIcons({ icons, root: newRow });
+          } else {
+            void renderAllBookmarksList();
+          }
+        }) }
+    ];
+    if (!isRoot) {
+      items.push(
+        { icon: "edit-3", label: "Rename", onClick: () => void renameFolder() },
+        { icon: "trash-2", label: "Delete", danger: true, onClick: () => void deleteFolder() }
+      );
+    }
+    openRowMenu(menuBtn, items);
+  });
+
+  if (!isRoot) {
+    summary.draggable = true;
+    summary.addEventListener("dragstart", (e) => {
+      dragCtx = {
+        node: folderNode,
+        isFolder: true,
+        rowEl: details,
+        parentInfo: currentParentInfo,
+        onMoved: (newInfo) => { currentParentInfo = newInfo; }
+      };
+      e.dataTransfer?.setData("text/plain", folderNode.id);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+      details.classList.add("opacity-40");
+    });
+    summary.addEventListener("dragend", () => {
+      details.classList.remove("opacity-40");
+      clearDropIndicator();
+      clearReparentHighlight();
+      clearHoverExpandTimer();
+      dragCtx = null;
+    });
+  }
+
+  summary.addEventListener("dragover", (e) => {
+    if (!dragCtx || dragCtx.node.id === folderNode.id) return;
+    if (dragCtx.isFolder && isBookmarkNodeOrDescendant(dragCtx.node, folderNode.id)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+
+    const rect = summary.getBoundingClientRect();
+    const ratio = isRoot ? 0.5 : (e.clientY - rect.top) / rect.height;
+
+    clearReparentHighlight();
+    if (!isRoot && ratio < 0.25) {
+      clearHoverExpandTimer();
+      details.parentElement.insertBefore(getDropIndicator(), details);
+    } else if (!isRoot && ratio > 0.75) {
+      clearHoverExpandTimer();
+      details.parentElement.insertBefore(getDropIndicator(), details.nextSibling);
+    } else {
+      clearDropIndicator();
+      summary.classList.add("bookmark-drop-into", "bg-[var(--color-accent)]/10", "ring-1", "ring-[var(--color-accent)]");
+      if (!details.open && hoverExpandFolderId !== folderNode.id) {
+        clearHoverExpandTimer();
+        hoverExpandFolderId = folderNode.id;
+        hoverExpandTimer = setTimeout(() => {
+          ensureExpanded();
+          hoverExpandTimer = null;
+          hoverExpandFolderId = null;
+        }, 600);
+      }
+    }
+  });
+
+  summary.addEventListener("dragleave", (e) => {
+    if (!summary.contains(e.relatedTarget)) {
+      summary.classList.remove("bookmark-drop-into", "bg-[var(--color-accent)]/10", "ring-1", "ring-[var(--color-accent)]");
+      if (hoverExpandFolderId === folderNode.id) clearHoverExpandTimer();
+    }
+  });
+
+  summary.addEventListener("drop", (e) => {
+    if (!dragCtx || dragCtx.node.id === folderNode.id) return;
+    if (dragCtx.isFolder && isBookmarkNodeOrDescendant(dragCtx.node, folderNode.id)) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rect = summary.getBoundingClientRect();
+    const ratio = isRoot ? 0.5 : (e.clientY - rect.top) / rect.height;
+
+    clearDropIndicator();
+    clearReparentHighlight();
+    clearHoverExpandTimer();
+
+    if (!isRoot && ratio < 0.25) {
+      void performBookmarkMove(currentParentInfo.node, currentParentInfo.container, details);
+    } else if (!isRoot && ratio > 0.75) {
+      void performBookmarkMove(currentParentInfo.node, currentParentInfo.container, details.nextElementSibling);
+    } else {
+      ensureExpanded();
+      void performBookmarkMove(folderNode, childrenContainer, null);
+    }
+  });
+
   return details;
 }
 
-function buildBookmarkLinkNode(bookmarkNode) {
+function buildBookmarkLinkNode(bookmarkNode, parentInfo) {
+  let currentParentInfo = parentInfo;
+
+  const row = document.createElement("div");
+  row.className = "flex items-center gap-1.5 py-1 px-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/60";
+  row.dataset.bookmarkRow = "true";
+
+  const handle = document.createElement("i");
+  handle.setAttribute("data-lucide", "grip-vertical");
+  handle.className = "w-3 h-3 text-zinc-300 dark:text-zinc-600 shrink-0 cursor-grab";
+  row.appendChild(handle);
+
   const a = document.createElement("a");
   a.href = bookmarkNode.url;
-  a.className = "flex items-center gap-1.5 text-xs text-[var(--color-accent)] hover:underline truncate py-1 px-1";
+  a.className = "flex items-center gap-1.5 text-xs text-[var(--color-accent)] hover:underline truncate flex-1 min-w-0";
   a.title = `${bookmarkNode.title || bookmarkNode.url}\n${bookmarkNode.url}`;
   a.innerHTML = `<i data-lucide="external-link" class="w-3.5 h-3.5 text-zinc-400 shrink-0"></i><span class="truncate">${escapeHtml(bookmarkNode.title || bookmarkNode.url)}</span>`;
   a.addEventListener("click", (e) => {
@@ -4147,5 +4432,275 @@ function buildBookmarkLinkNode(bookmarkNode) {
       window.open(bookmarkNode.url, "_blank");
     }
   });
-  return a;
+  row.appendChild(a);
+
+  const menuBtn = document.createElement("button");
+  menuBtn.type = "button";
+  menuBtn.className = "p-1 text-zinc-400 hover:text-[var(--color-accent)] hover:bg-zinc-200 dark:hover:bg-zinc-700/60 rounded-md transition-all shrink-0";
+  menuBtn.title = "More actions";
+  menuBtn.innerHTML = `<i data-lucide="more-vertical" class="w-3.5 h-3.5"></i>`;
+  row.appendChild(menuBtn);
+
+  async function renameLink() {
+    const newTitle = await showPrompt("Rename bookmark:", bookmarkNode.title || "");
+    if (newTitle === null) return;
+    const trimmed = newTitle.trim();
+    if (!trimmed || trimmed === bookmarkNode.title) return;
+    try {
+      await chrome.bookmarks.update(bookmarkNode.id, { title: trimmed });
+      bookmarkNode.title = trimmed;
+      a.querySelector("span").textContent = trimmed;
+      a.title = `${trimmed}\n${bookmarkNode.url}`;
+    } catch (err) {
+      console.error("Error renaming bookmark:", err);
+      void showAlert("Failed to rename bookmark.");
+    }
+  }
+
+  async function editUrl() {
+    const newUrl = await showPrompt("Edit URL:", bookmarkNode.url || "");
+    if (newUrl === null) return;
+    const trimmed = newUrl.trim();
+    if (!trimmed || trimmed === bookmarkNode.url) return;
+    try {
+      await chrome.bookmarks.update(bookmarkNode.id, { url: trimmed });
+      bookmarkNode.url = trimmed;
+      a.href = trimmed;
+      a.title = `${bookmarkNode.title}\n${trimmed}`;
+    } catch (err) {
+      console.error("Error editing bookmark URL:", err);
+      void showAlert("Failed to update bookmark URL.");
+    }
+  }
+
+  async function deleteLink() {
+    const confirmed = await showConfirm(`Delete bookmark "${bookmarkNode.title}"?`);
+    if (!confirmed) return;
+    try {
+      await chrome.bookmarks.remove(bookmarkNode.id);
+      if (currentParentInfo?.node?.children) {
+        const i = currentParentInfo.node.children.indexOf(bookmarkNode);
+        if (i !== -1) currentParentInfo.node.children.splice(i, 1);
+      }
+      row.remove();
+    } catch (err) {
+      console.error("Error deleting bookmark:", err);
+      void showAlert("Failed to delete bookmark.");
+    }
+  }
+
+  menuBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openRowMenu(menuBtn, [
+      { icon: "edit-3", label: "Rename", onClick: () => void renameLink() },
+      { icon: "link", label: "Edit URL", onClick: () => void editUrl() },
+      { icon: "trash-2", label: "Delete", danger: true, onClick: () => void deleteLink() }
+    ]);
+  });
+
+  row.draggable = true;
+  row.addEventListener("dragstart", (e) => {
+    dragCtx = {
+      node: bookmarkNode,
+      isFolder: false,
+      rowEl: row,
+      parentInfo: currentParentInfo,
+      onMoved: (newInfo) => { currentParentInfo = newInfo; }
+    };
+    e.dataTransfer?.setData("text/plain", bookmarkNode.id);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+    row.classList.add("opacity-40");
+  });
+  row.addEventListener("dragend", () => {
+    row.classList.remove("opacity-40");
+    clearDropIndicator();
+    clearReparentHighlight();
+    clearHoverExpandTimer();
+    dragCtx = null;
+  });
+
+  row.addEventListener("dragover", (e) => {
+    if (!dragCtx || dragCtx.node.id === bookmarkNode.id) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    clearReparentHighlight();
+    const rect = row.getBoundingClientRect();
+    const ratio = (e.clientY - rect.top) / rect.height;
+    if (ratio < 0.5) {
+      row.parentElement.insertBefore(getDropIndicator(), row);
+    } else {
+      row.parentElement.insertBefore(getDropIndicator(), row.nextSibling);
+    }
+  });
+
+  row.addEventListener("drop", (e) => {
+    if (!dragCtx || dragCtx.node.id === bookmarkNode.id) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = row.getBoundingClientRect();
+    const ratio = (e.clientY - rect.top) / rect.height;
+    clearDropIndicator();
+    clearReparentHighlight();
+    clearHoverExpandTimer();
+    const beforeEl = ratio < 0.5 ? row : row.nextElementSibling;
+    void performBookmarkMove(currentParentInfo.node, currentParentInfo.container, beforeEl);
+  });
+
+  return row;
 }
+
+// ─── Bookmark location picker (tree in picker mode) ────────────────────────
+// Reused by both the New Bookmark dialog and Save Opened Tabs.
+
+function createPickerContext(initialSelection) {
+  const rowsById = new Map();
+  let selected = initialSelection || null;
+  return {
+    registerRow(id, el) { rowsById.set(id, el); },
+    select(node, el) {
+      rowsById.forEach(r => r.classList.remove("bg-[var(--color-accent)]/10", "ring-1", "ring-[var(--color-accent)]", "font-bold"));
+      el.classList.add("bg-[var(--color-accent)]/10", "ring-1", "ring-[var(--color-accent)]", "font-bold");
+      selected = { id: node.id, title: node.title };
+      locationPickerSelect.disabled = false;
+    },
+    getSelected() { return selected; }
+  };
+}
+
+function buildLocationPickerFolderNode(folderNode, expanded, pickerCtx) {
+  const details = document.createElement("details");
+  details.className = "group";
+  if (expanded) details.open = true;
+
+  const summary = document.createElement("summary");
+  summary.className = "flex items-center gap-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer py-1.5 px-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/60 select-none";
+  summary.innerHTML = `<i data-lucide="folder" class="w-3.5 h-3.5 text-zinc-400 shrink-0"></i><span class="truncate flex-1">${escapeHtml(folderNode.title || "(untitled)")}</span>`;
+  summary.addEventListener("click", () => pickerCtx.select(folderNode, summary));
+  pickerCtx.registerRow(folderNode.id, summary);
+
+  details.appendChild(summary);
+
+  const childrenContainer = document.createElement("div");
+  childrenContainer.className = "pl-4 space-y-0.5";
+  details.appendChild(childrenContainer);
+
+  let built = false;
+  const buildChildren = () => {
+    if (built) return;
+    built = true;
+    (folderNode.children || [])
+      .filter(child => !child.url && !isManagedBookmarkFolder(child))
+      .forEach(child => childrenContainer.appendChild(buildLocationPickerFolderNode(child, false, pickerCtx)));
+    createIcons({ icons, root: childrenContainer });
+  };
+
+  if (expanded) buildChildren();
+  else details.addEventListener("toggle", () => { if (details.open) buildChildren(); });
+
+  return details;
+}
+
+/**
+ * @param {string} title
+ * @param {{id: string, title: string}|null} [preset]
+ * @returns {Promise<{id: string, title: string}|null>}
+ */
+function pickBookmarkLocation(title, preset) {
+  return new Promise((resolve) => {
+    locationPickerTitle.textContent = title;
+    locationPickerTree.innerHTML = "";
+    locationPickerSelect.disabled = !preset;
+
+    const pickerCtx = createPickerContext(preset || null);
+
+    (async () => {
+      try {
+        const [rootNode] = await chrome.bookmarks.getTree();
+        const roots = (rootNode.children || []).filter(root => !isManagedBookmarkFolder(root));
+        roots.forEach(root => {
+          locationPickerTree.appendChild(buildLocationPickerFolderNode(root, true, pickerCtx));
+        });
+        createIcons({ icons, root: locationPickerTree });
+      } catch (err) {
+        console.error("Error building location picker tree:", err);
+      }
+    })();
+
+    locationPickerDialog.showModal();
+
+    function onCancel() {
+      cleanup();
+      resolve(null);
+    }
+    function onSelect() {
+      const sel = pickerCtx.getSelected();
+      cleanup();
+      resolve(sel);
+    }
+    function cleanup() {
+      locationPickerDialog.close();
+      locationPickerCancel.removeEventListener("click", onCancel);
+      locationPickerSelect.removeEventListener("click", onSelect);
+    }
+    locationPickerCancel.addEventListener("click", onCancel);
+    locationPickerSelect.addEventListener("click", onSelect);
+  });
+}
+
+// ─── New Bookmark dialog ────────────────────────────────────────────────────
+
+let newBookmarkSelectedLocation = null;
+let newBookmarkOnCreated = null;
+
+function showNewBookmarkError(message) {
+  newBookmarkError.textContent = message;
+  newBookmarkError.classList.remove("hidden");
+}
+
+/**
+ * @param {{id: string, title: string}|null} presetFolder
+ * @param {(destinationId: string, createdNode: {id: string, title: string, url: string}) => void} onCreated
+ */
+function openNewBookmarkDialog(presetFolder, onCreated) {
+  newBookmarkNameInput.value = "";
+  newBookmarkUrlInput.value = "";
+  newBookmarkError.classList.add("hidden");
+  newBookmarkSelectedLocation = presetFolder || null;
+  newBookmarkLocationLabel.textContent = newBookmarkSelectedLocation ? newBookmarkSelectedLocation.title : "Choose location...";
+  newBookmarkLocationLabel.classList.toggle("text-zinc-400", !newBookmarkSelectedLocation);
+  newBookmarkOnCreated = onCreated;
+  newBookmarkDialog.showModal();
+  requestAnimationFrame(() => newBookmarkNameInput.focus());
+}
+
+newBookmarkBtn?.addEventListener("click", () => openNewBookmarkDialog(null, () => void renderAllBookmarksList()));
+
+newBookmarkLocationBtn?.addEventListener("click", async () => {
+  const picked = await pickBookmarkLocation("Choose a location", newBookmarkSelectedLocation);
+  if (picked) {
+    newBookmarkSelectedLocation = picked;
+    newBookmarkLocationLabel.textContent = picked.title;
+    newBookmarkLocationLabel.classList.remove("text-zinc-400");
+  }
+});
+
+newBookmarkCancel?.addEventListener("click", () => newBookmarkDialog.close());
+
+newBookmarkSave?.addEventListener("click", async () => {
+  const name = newBookmarkNameInput.value.trim();
+  const url = newBookmarkUrlInput.value.trim();
+  if (!name) return showNewBookmarkError("Please enter a name.");
+  if (!url) return showNewBookmarkError("Please enter a URL.");
+  if (!newBookmarkSelectedLocation) return showNewBookmarkError("Please choose a location.");
+
+  try {
+    const created = await chrome.bookmarks.create({ parentId: newBookmarkSelectedLocation.id, title: name, url });
+    const destinationId = newBookmarkSelectedLocation.id;
+    newBookmarkDialog.close();
+    newBookmarkOnCreated?.(destinationId, created);
+  } catch (err) {
+    console.error("Error creating bookmark:", err);
+    showNewBookmarkError("Failed to create bookmark.");
+  }
+});
