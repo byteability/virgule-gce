@@ -3402,6 +3402,20 @@ function escapeHtml(text) {
     .replaceAll("'", "&#39;");
 }
 
+const SAFE_BOOKMARK_URL_PROTOCOLS = new Set(["http:", "https:", "ftp:", "file:"]);
+
+/**
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isSafeBookmarkUrl(url) {
+  try {
+    return SAFE_BOOKMARK_URL_PROTOCOLS.has(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
 renderPreview("");
 
 async function initializePrivacyScreen() {
@@ -4520,6 +4534,10 @@ function buildBookmarkLinkNode(bookmarkNode, parentInfo) {
     if (newUrl === null) return;
     const trimmed = newUrl.trim();
     if (!trimmed || trimmed === bookmarkNode.url) return;
+    if (!isSafeBookmarkUrl(trimmed)) {
+      void showAlert("Please enter a valid http(s), ftp, or file URL.");
+      return;
+    }
     try {
       await chrome.bookmarks.update(bookmarkNode.id, { url: trimmed });
       bookmarkNode.url = trimmed;
@@ -5169,6 +5187,7 @@ newBookmarkSave?.addEventListener("click", async () => {
   const url = newBookmarkUrlInput.value.trim();
   if (!name) return showNewBookmarkError("Please enter a name.");
   if (!url) return showNewBookmarkError("Please enter a URL.");
+  if (!isSafeBookmarkUrl(url)) return showNewBookmarkError("Please enter a valid http(s), ftp, or file URL.");
   if (!newBookmarkSelectedLocation) return showNewBookmarkError("Please choose a location.");
 
   try {
