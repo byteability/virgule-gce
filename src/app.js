@@ -618,19 +618,22 @@ async function searchFolderRecursively(handle, path, query, results) {
 
 function renderSearchResults(results, query) {
   if (results.length === 0) {
-    searchResultsContainer.innerHTML = `<div class="p-8 text-center"><p class="text-sm text-zinc-500">No results found for "${query}"</p></div>`;
+    searchResultsContainer.innerHTML = `<div class="p-8 text-center"><p class="text-sm text-zinc-500">No results found for "${escapeHtml(query)}"</p></div>`;
     return;
   }
-  
+
   searchResultsContainer.innerHTML = "";
   results.forEach(result => {
     const item = document.createElement("div");
     item.className = "p-3.5 mb-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl hover:border-[var(--color-accent)] hover:shadow-refraction transition-all duration-200 cursor-pointer group active:scale-[0.98]";
-    
+
     const highlight = (text, q) => {
       if (!text) return "";
-      const regex = new RegExp(`(${q})`, "gi");
-      return text.replace(regex, '<mark class="bg-[var(--color-accent-soft)] text-[var(--color-accent)] rounded px-0.5 font-medium">$1</mark>');
+      const escapedText = escapeHtml(text);
+      const escapedQuery = escapeHtml(q).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (!escapedQuery) return escapedText;
+      const regex = new RegExp(`(${escapedQuery})`, "gi");
+      return escapedText.replace(regex, '<mark class="bg-[var(--color-accent-soft)] text-[var(--color-accent)] rounded px-0.5 font-medium">$1</mark>');
     };
 
     item.innerHTML = `
@@ -638,7 +641,7 @@ function renderSearchResults(results, query) {
         <i data-lucide="file-text" class="w-4 h-4 text-zinc-400 dark:text-zinc-500 mt-0.5 transition-colors group-hover:text-[var(--color-accent)]"></i>
         <div class="flex-1 min-w-0">
           <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate group-hover:text-[var(--color-accent)] transition-colors">${highlight(result.name, query)}</h3>
-          <p class="text-[10px] text-zinc-400 truncate mb-1.5">${result.path}</p>
+          <p class="text-[10px] text-zinc-400 truncate mb-1.5">${escapeHtml(result.path)}</p>
           ${result.contentMatch ? `<p class="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed line-clamp-2 italic">${highlight(result.contentMatch, query)}</p>` : ""}
         </div>
       </div>
@@ -3402,15 +3405,15 @@ function escapeHtml(text) {
     .replaceAll("'", "&#39;");
 }
 
-const SAFE_BOOKMARK_URL_PROTOCOLS = new Set(["http:", "https:", "ftp:", "file:"]);
+const SAFE_URL_PROTOCOLS = new Set(["http:", "https:", "ftp:", "file:"]);
 
 /**
  * @param {string} url
  * @returns {boolean}
  */
-function isSafeBookmarkUrl(url) {
+function isSafeUrl(url) {
   try {
-    return SAFE_BOOKMARK_URL_PROTOCOLS.has(new URL(url).protocol);
+    return SAFE_URL_PROTOCOLS.has(new URL(url).protocol);
   } catch {
     return false;
   }
@@ -3784,6 +3787,7 @@ function renderPrivacyLinks() {
   links.forEach(entry => {
     const parts = entry.split("|");
     const url = parts[0].trim();
+    if (!isSafeUrl(url)) return;
     const customLabel = parts[1] ? parts[1].trim() : "";
     let icon = "globe";
     let title = "Link";
@@ -3804,7 +3808,7 @@ function renderPrivacyLinks() {
     a.target = "_blank";
     a.className = "flex flex-col items-center gap-2 p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl transition-all hover:scale-110 group";
     a.title = label;
-    a.innerHTML = `<i data-lucide="${icon}" class="w-6 h-6 text-white/70 group-hover:text-white"></i><span class="text-[10px] font-medium text-white/50 group-hover:text-white/80 transition-colors truncate max-w-[80px]">${label}</span>`;
+    a.innerHTML = `<i data-lucide="${icon}" class="w-6 h-6 text-white/70 group-hover:text-white"></i><span class="text-[10px] font-medium text-white/50 group-hover:text-white/80 transition-colors truncate max-w-[80px]">${escapeHtml(label)}</span>`;
     privacyShortcuts.appendChild(a);
   });
 }
@@ -4534,7 +4538,7 @@ function buildBookmarkLinkNode(bookmarkNode, parentInfo) {
     if (newUrl === null) return;
     const trimmed = newUrl.trim();
     if (!trimmed || trimmed === bookmarkNode.url) return;
-    if (!isSafeBookmarkUrl(trimmed)) {
+    if (!isSafeUrl(trimmed)) {
       void showAlert("Please enter a valid http(s), ftp, or file URL.");
       return;
     }
@@ -5187,7 +5191,7 @@ newBookmarkSave?.addEventListener("click", async () => {
   const url = newBookmarkUrlInput.value.trim();
   if (!name) return showNewBookmarkError("Please enter a name.");
   if (!url) return showNewBookmarkError("Please enter a URL.");
-  if (!isSafeBookmarkUrl(url)) return showNewBookmarkError("Please enter a valid http(s), ftp, or file URL.");
+  if (!isSafeUrl(url)) return showNewBookmarkError("Please enter a valid http(s), ftp, or file URL.");
   if (!newBookmarkSelectedLocation) return showNewBookmarkError("Please choose a location.");
 
   try {
