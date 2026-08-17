@@ -561,6 +561,42 @@
       </div>
     </dialog>
 
+    <!-- Note picker (walks the notes-explorer tree; reused for "link existing note" and "choose destination folder") -->
+    <dialog id="note-picker-dialog" class="rounded-xl shadow-2xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] p-0 w-full max-w-sm backdrop:bg-black/50 backdrop:backdrop-blur-sm">
+      <div class="p-5 flex flex-col gap-3">
+        <p id="note-picker-title" class="text-sm font-bold text-zinc-700 dark:text-zinc-300">Choose a note</p>
+        <div id="note-picker-tree" class="max-h-64 overflow-auto custom-scrollbar space-y-0.5 border border-[var(--color-border)] rounded-lg p-2"></div>
+        <div class="flex justify-end gap-2">
+          <button id="note-picker-cancel" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--color-border)] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Cancel</button>
+          <button id="note-picker-select" type="button" disabled class="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Select</button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Create New Note dialog (creates a note and links it to a bookmark) -->
+    <dialog id="new-note-dialog" class="rounded-xl shadow-2xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] p-0 w-full max-w-sm backdrop:bg-black/50 backdrop:backdrop-blur-sm">
+      <div class="p-5 flex flex-col gap-3">
+        <p class="text-sm font-bold text-zinc-700 dark:text-zinc-300">Create New Note</p>
+        <label class="flex flex-col gap-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+          Name
+          <input id="new-note-name-input" type="text" placeholder="new-note.md"
+            class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]" />
+        </label>
+        <div class="flex flex-col gap-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+          Destination
+          <button id="new-note-location-btn" type="button" class="flex items-center justify-between w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-left text-[var(--color-text)] hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-colors">
+            <span id="new-note-location-label" class="truncate text-zinc-400">Choose location...</span>
+            <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-zinc-400 shrink-0"></i>
+          </button>
+        </div>
+        <p id="new-note-error" class="hidden text-xs text-red-500"></p>
+        <div class="flex justify-end gap-2 mt-1">
+          <button id="new-note-cancel" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--color-border)] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Cancel</button>
+          <button id="new-note-create" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] transition-colors">Create</button>
+        </div>
+      </div>
+    </dialog>
+
     <script src="/src/main.js" type="module"></script>
 
   </body>

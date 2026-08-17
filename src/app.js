@@ -318,12 +318,31 @@ const newBookmarkError = document.getElementById("new-bookmark-error");
 const newBookmarkCancel = document.getElementById("new-bookmark-cancel");
 const newBookmarkSave = document.getElementById("new-bookmark-save");
 
+// Note picker dialog (walks the notes-explorer tree; reused for "link existing note" and "choose destination folder")
+const notePickerDialog = document.getElementById("note-picker-dialog");
+const notePickerTitle = document.getElementById("note-picker-title");
+const notePickerTree = document.getElementById("note-picker-tree");
+const notePickerCancel = document.getElementById("note-picker-cancel");
+const notePickerSelect = document.getElementById("note-picker-select");
+
+// Create New Note dialog (attaches the created note to a bookmark)
+const newNoteDialog = document.getElementById("new-note-dialog");
+const newNoteNameInput = document.getElementById("new-note-name-input");
+const newNoteLocationBtn = document.getElementById("new-note-location-btn");
+const newNoteLocationLabel = document.getElementById("new-note-location-label");
+const newNoteError = document.getElementById("new-note-error");
+const newNoteCancel = document.getElementById("new-note-cancel");
+const newNoteCreate = document.getElementById("new-note-create");
+
 
 const LIBRARY_DB_NAME = "clio-notes-db";
 const LIBRARY_DB_VERSION = 1;
 const LIBRARY_STORE_NAME = "libraryFolders";
 const ACTIVE_LIBRARY_KEY = "clio-notes-active-library-folder-id";
 const FRONT_PAGE_MAP_KEY = "clio-notes-front-page-by-folder";
+const BOOKMARK_NOTE_LINKS_KEY = "clio-notes-bookmark-note-links";
+const NOTE_ID_FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+const NOTE_ID_LINE_RE = /^clio-note-id:\s*(\S+)\s*$/m;
 const TRASH_DIR_NAME = ".clio-trash";
 const HOMEPAGE_ENABLED_KEY = "clio-notes-homepage-enabled";
 const EXPANDED_FOLDERS_KEY = "clio-notes-expanded-folders";
@@ -364,6 +383,7 @@ const state = {
   contextMenuTargetPath: "",
   contextMenuParentPath: "",
   frontPageByFolder: {},
+  bookmarkNoteLinks: {},
   imageCache: {},
   expandedFolders: new Set(),
   explorerVisible: true,
@@ -1213,6 +1233,7 @@ async function initializeLibrary() {
       }
     }
     state.frontPageByFolder = loadFrontPageMap();
+    state.bookmarkNoteLinks = loadBookmarkNoteLinks();
     state.libraryFolders = await getStoredLibraryFolders();
     renderLibraryList();
 
@@ -1530,7 +1551,7 @@ function updateExplorerActionButtons() {
   // Actions are handled through the explorer context menu.
 }
 
-async function buildFolderTree(dirHandle, pathPrefix, libraryId) {
+async function buildFolderTree(dirHandle, pathPrefix, libraryId, libraryRelativePrefix = "", linkedNotePathKeys = null) {
   const container = document.createElement("ul");
 
   const directories = [];
@@ -1614,7 +1635,8 @@ async function buildFolderTree(dirHandle, pathPrefix, libraryId) {
       localStorage.setItem(EXPANDED_FOLDERS_KEY, JSON.stringify(Array.from(state.expandedFolders)));
     });
 
-    details.appendChild(await buildFolderTree(directory.handle, folderPath, libraryId));
+    const folderRelativeInLibrary = libraryRelativePrefix ? libraryRelativePrefix + "/" + directory.name : directory.name;
+    details.appendChild(await buildFolderTree(directory.handle, folderPath, libraryId, folderRelativeInLibrary, linkedNotePathKeys));
 
     item.appendChild(details);
     container.appendChild(item);
@@ -1646,6 +1668,15 @@ async function buildFolderTree(dirHandle, pathPrefix, libraryId) {
     fileLabel.appendChild(fileIcon);
     fileLabel.appendChild(fileNameText);
     button.appendChild(fileLabel);
+
+    const fileRelativeInLibrary = libraryRelativePrefix ? libraryRelativePrefix + "/" + file.name : file.name;
+    if (linkedNotePathKeys && linkedNotePathKeys.has(libraryId + "::" + fileRelativeInLibrary)) {
+      const linkBadge = document.createElement("i");
+      linkBadge.setAttribute("data-lucide", "link");
+      linkBadge.className = "w-3 h-3 text-[var(--color-accent)] shrink-0 ml-auto";
+      linkBadge.title = "Linked from a bookmark";
+      button.appendChild(linkBadge);
+    }
 
     const filePath = pathPrefix + "/" + file.name;
     button.dataset.entryType = "file";
@@ -1693,6 +1724,8 @@ async function refreshTree() {
   treeList.className = "tree-root-list";
   treeRoot.appendChild(treeList);
 
+  const linkedNotePathKeys = computeLinkedNotePathKeys();
+
   for (const entry of state.libraryFolders) {
     const rootItem = document.createElement("li");
     rootItem.className = "tree-item library-root";
@@ -1738,7 +1771,7 @@ async function refreshTree() {
     try {
       const hasPermission = await hasReadWritePermission(entry.handle);
       if (hasPermission) {
-        const tree = await buildFolderTree(entry.handle, entry.name, entry.id);
+        const tree = await buildFolderTree(entry.handle, entry.name, entry.id, "", linkedNotePathKeys);
         details.appendChild(tree);
       } else {
         const reconnectContainer = document.createElement("div");
@@ -2755,6 +2788,13 @@ async function getDirectoryHandleByRootAndRelative(rootHandle, relativePath) {
 async function getFileHandleByRelativePath(relativePath) {
   const sourceInfo = splitParentAndName(relativePath);
   const parentHandle = await getDirectoryHandleByRelativePath(sourceInfo.parentPath);
+  return parentHandle.getFileHandle(sourceInfo.name);
+}
+
+/** Like getFileHandleByRelativePath, but resolves against an explicit library root rather than the active one — needed to look up notes in a library folder that isn't currently active. */
+async function getFileHandleByRootAndRelative(rootHandle, relativePath) {
+  const sourceInfo = splitParentAndName(relativePath);
+  const parentHandle = await getDirectoryHandleByRootAndRelative(rootHandle, sourceInfo.parentPath);
   return parentHandle.getFileHandle(sourceInfo.name);
 }
 
@@ -4434,6 +4474,24 @@ function buildBookmarkLinkNode(bookmarkNode, parentInfo) {
   });
   row.appendChild(a);
 
+  const noteBtn = document.createElement("button");
+  noteBtn.type = "button";
+  applyNoteButtonState(noteBtn, bookmarkNode.id);
+  noteBtn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const result = await resolveBookmarkNote(bookmarkNode.id);
+    if (result.status === "resolved") {
+      await openResolvedNote(result);
+    } else {
+      openRowMenu(noteBtn, [
+        { icon: "file-plus", label: "Create New Note", onClick: () => openCreateNoteDialog(bookmarkNode.id, () => refreshNoteButton(noteBtn, bookmarkNode.id)) },
+        { icon: "link", label: "Link Existing Note", onClick: () => void linkExistingNoteForBookmark(bookmarkNode.id, () => refreshNoteButton(noteBtn, bookmarkNode.id)) }
+      ]);
+    }
+  });
+  row.appendChild(noteBtn);
+
   const menuBtn = document.createElement("button");
   menuBtn.type = "button";
   menuBtn.className = "p-1 text-zinc-400 hover:text-[var(--color-accent)] hover:bg-zinc-200 dark:hover:bg-zinc-700/60 rounded-md transition-all shrink-0";
@@ -4476,7 +4534,32 @@ function buildBookmarkLinkNode(bookmarkNode, parentInfo) {
   async function deleteLink() {
     const confirmed = await showConfirm(`Delete bookmark "${bookmarkNode.title}"?`);
     if (!confirmed) return;
+
+    const link = state.bookmarkNoteLinks[bookmarkNode.id];
+    let alsoDeleteNote = false;
+    if (link) {
+      const otherCount = countOtherBookmarksLinkedToNote(link.noteId, bookmarkNode.id);
+      const sharedNote = otherCount > 0
+        ? `${otherCount} other bookmark${otherCount === 1 ? "" : "s"} also reference${otherCount === 1 ? "s" : ""} it.`
+        : "No other bookmarks reference it.";
+      alsoDeleteNote = await showConfirm(`This bookmark is linked to a note. ${sharedNote} Also delete the note file?`);
+    }
+
     try {
+      if (link && alsoDeleteNote) {
+        const result = await resolveBookmarkNote(bookmarkNode.id);
+        if (result.status === "resolved") {
+          const entry = state.libraryFolders.find(f => f.id === result.libraryId);
+          const parentHandle = await getDirectoryHandleByRootAndRelative(entry.handle, splitParentAndName(result.relativePath).parentPath);
+          await parentHandle.removeEntry(splitParentAndName(result.relativePath).name);
+          await refreshTree();
+        }
+      }
+      if (link) {
+        delete state.bookmarkNoteLinks[bookmarkNode.id];
+        saveBookmarkNoteLinks();
+      }
+
       await chrome.bookmarks.remove(bookmarkNode.id);
       if (currentParentInfo?.node?.children) {
         const i = currentParentInfo.node.children.indexOf(bookmarkNode);
@@ -4549,6 +4632,400 @@ function buildBookmarkLinkNode(bookmarkNode, parentInfo) {
 
   return row;
 }
+
+// ─── Bookmark ↔ note links ──────────────────────────────────────────────────
+// A note's identity is a `clio-note-id` embedded in its own markdown content
+// (see NOTE_ID_FRONTMATTER_RE above), not its file path, so the link survives
+// the note being renamed or moved — including outside the app. Bookmark ids
+// are already stable via chrome.bookmarks; only the note side needed this.
+
+function readNoteId(content) {
+  const frontmatterMatch = content.match(NOTE_ID_FRONTMATTER_RE);
+  if (!frontmatterMatch) return null;
+  const idMatch = frontmatterMatch[1].match(NOTE_ID_LINE_RE);
+  return idMatch ? idMatch[1] : null;
+}
+
+function insertNoteIdIntoContent(content, id) {
+  const frontmatterMatch = content.match(NOTE_ID_FRONTMATTER_RE);
+  if (frontmatterMatch) {
+    const block = frontmatterMatch[0];
+    const updatedBlock = block.replace(/^---\r?\n/, `---\nclio-note-id: ${id}\n`);
+    return updatedBlock + content.slice(block.length);
+  }
+  return `---\nclio-note-id: ${id}\n---\n\n${content}`;
+}
+
+async function getNoteIdFromFileHandle(fileHandle) {
+  const file = await fileHandle.getFile();
+  const text = await file.text();
+  return readNoteId(text);
+}
+
+/** Returns the note's existing id, or assigns and persists a new one if it has none yet. */
+async function assignNoteId(fileHandle) {
+  const file = await fileHandle.getFile();
+  const text = await file.text();
+  const existingId = readNoteId(text);
+  if (existingId) return existingId;
+
+  const id = crypto.randomUUID();
+  const writable = await fileHandle.createWritable();
+  await writable.write(insertNoteIdIntoContent(text, id));
+  await writable.close();
+  return id;
+}
+
+function loadBookmarkNoteLinks() {
+  try {
+    const raw = localStorage.getItem(BOOKMARK_NOTE_LINKS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function saveBookmarkNoteLinks() {
+  localStorage.setItem(BOOKMARK_NOTE_LINKS_KEY, JSON.stringify(state.bookmarkNoteLinks));
+}
+
+/** Set of "libraryFolderId::relativePath" for every link's cached hint — used to paint the reverse-linked badge in the notes explorer without reading every file's content. */
+function computeLinkedNotePathKeys() {
+  const keys = new Set();
+  for (const link of Object.values(state.bookmarkNoteLinks)) {
+    if (link?.hint?.libraryFolderId && typeof link.hint.relativePath === "string") {
+      keys.add(link.hint.libraryFolderId + "::" + link.hint.relativePath);
+    }
+  }
+  return keys;
+}
+
+/** How many bookmarks other than `excludingBookmarkId` currently link to `noteId`. */
+function countOtherBookmarksLinkedToNote(noteId, excludingBookmarkId) {
+  let count = 0;
+  for (const [bookmarkId, link] of Object.entries(state.bookmarkNoteLinks)) {
+    if (bookmarkId !== excludingBookmarkId && link?.noteId === noteId) count++;
+  }
+  return count;
+}
+
+async function findNoteIdInDirectory(dirHandle, relativePrefix, targetId) {
+  for await (const [name, handle] of dirHandle.entries()) {
+    if (name.startsWith(".")) continue;
+    const childRelative = relativePrefix ? relativePrefix + "/" + name : name;
+    if (handle.kind === "directory") {
+      const found = await findNoteIdInDirectory(handle, childRelative, targetId);
+      if (found) return found;
+    } else if (handle.kind === "file" && /\.md$/i.test(name)) {
+      const noteId = await getNoteIdFromFileHandle(handle);
+      if (noteId === targetId) {
+        return { fileHandle: handle, relativePath: childRelative };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolves a bookmark's linked note, scoped to library folders that are currently
+ * open with a valid permission grant. Never requests permission — a note that only
+ * exists in a closed library is treated as not found, same as a genuinely missing note.
+ * @returns {Promise<{status:"unlinked"}|{status:"orphaned",noteId:string}|{status:"resolved",fileHandle:any,libraryId:string,relativePath:string}>}
+ */
+async function resolveBookmarkNote(bookmarkId) {
+  const link = state.bookmarkNoteLinks[bookmarkId];
+  if (!link) return { status: "unlinked" };
+
+  if (link.hint) {
+    const hintEntry = state.libraryFolders.find(f => f.id === link.hint.libraryFolderId);
+    if (hintEntry && await hasReadWritePermission(hintEntry.handle)) {
+      try {
+        const fileHandle = await getFileHandleByRootAndRelative(hintEntry.handle, link.hint.relativePath);
+        const noteId = await getNoteIdFromFileHandle(fileHandle);
+        if (noteId === link.noteId) {
+          return { status: "resolved", fileHandle, libraryId: hintEntry.id, relativePath: link.hint.relativePath };
+        }
+      } catch {
+        // Hint is stale (file gone/moved) — fall through to the scan below.
+      }
+    }
+  }
+
+  for (const entry of state.libraryFolders) {
+    if (!(await hasReadWritePermission(entry.handle))) continue;
+    const match = await findNoteIdInDirectory(entry.handle, "", link.noteId);
+    if (match) {
+      link.hint = { libraryFolderId: entry.id, relativePath: match.relativePath };
+      saveBookmarkNoteLinks();
+      return { status: "resolved", fileHandle: match.fileHandle, libraryId: entry.id, relativePath: match.relativePath };
+    }
+  }
+
+  return { status: "orphaned", noteId: link.noteId };
+}
+
+async function openResolvedNote(result) {
+  const entry = state.libraryFolders.find(f => f.id === result.libraryId);
+  if (!entry) return;
+  await switchActiveLibrary(result.libraryId);
+  await refreshTree();
+  const fullPath = entry.name + "/" + result.relativePath;
+  const parentRelative = splitParentAndName(result.relativePath).parentPath;
+  const parentFullPath = parentRelative ? entry.name + "/" + parentRelative : entry.name;
+  setExplorerSelection("file", fullPath, parentFullPath);
+  await openMarkdownFile(result.fileHandle, fullPath, findFileButtonByPath(fullPath));
+}
+
+/**
+ * Sets a note-status button's look based on whether the bookmark has a linked note.
+ * Linked gets its own accent pill (not just a recolored icon) so it reads as a
+ * distinct chip next to the grip/menu icons rather than blending in with them —
+ * a bare color change on a 14px icon was too easy to miss at a glance.
+ */
+function applyNoteButtonState(btn, bookmarkId) {
+  const isLinked = Boolean(state.bookmarkNoteLinks[bookmarkId]);
+  btn.className = isLinked
+    ? "flex items-center gap-1 px-1.5 py-1 text-[var(--color-accent)] bg-[var(--color-accent)]/10 hover:bg-[var(--color-accent)]/20 rounded-md transition-all shrink-0"
+    : "p-1 text-zinc-400 hover:text-[var(--color-accent)] hover:bg-zinc-200 dark:hover:bg-zinc-700/60 rounded-md transition-all shrink-0";
+  btn.title = isLinked ? "Open linked note" : "Add a note";
+  btn.innerHTML = isLinked
+    ? `<i data-lucide="file-text" class="w-3.5 h-3.5"></i>`
+    : `<i data-lucide="file-plus" class="w-3.5 h-3.5"></i>`;
+}
+
+function refreshNoteButton(btn, bookmarkId) {
+  applyNoteButtonState(btn, bookmarkId);
+  createIcons({ icons, root: btn });
+}
+
+async function linkExistingNoteForBookmark(bookmarkId, onLinked) {
+  const picked = await pickNoteLocation("Choose a note to link", "file");
+  if (!picked) return;
+  try {
+    const id = await assignNoteId(picked.fileHandle);
+    state.bookmarkNoteLinks[bookmarkId] = {
+      noteId: id,
+      hint: { libraryFolderId: picked.libraryId, relativePath: picked.relativePath }
+    };
+    saveBookmarkNoteLinks();
+    await refreshTree();
+    setStatus("Linked note to bookmark.");
+    onLinked?.();
+  } catch (err) {
+    console.error("Error linking note:", err);
+    void showAlert("Failed to link note.");
+  }
+}
+
+// ─── Note picker (walks the notes-explorer tree, scoped to open libraries) ──
+
+function createNotePickerContext() {
+  const rowsByKey = new Map();
+  let selected = null;
+  return {
+    registerRow(key, el) { rowsByKey.set(key, el); },
+    select(info, el) {
+      rowsByKey.forEach(r => r.classList.remove("bg-[var(--color-accent)]/10", "ring-1", "ring-[var(--color-accent)]", "font-bold"));
+      el.classList.add("bg-[var(--color-accent)]/10", "ring-1", "ring-[var(--color-accent)]", "font-bold");
+      selected = info;
+      notePickerSelect.disabled = false;
+    },
+    getSelected() { return selected; }
+  };
+}
+
+/**
+ * Builds one folder row lazily: its own children (subfolders, and files in "file" mode)
+ * are only listed once the row is actually expanded, mirroring buildLocationPickerFolderNode's
+ * build-on-toggle pattern instead of eagerly recursing through the whole tree up front.
+ * @param {"folder"|"file"} mode
+ */
+function buildNotePickerFolderNode(dirHandle, relativePath, name, libraryId, pickerCtx, mode, expanded, isRoot = false) {
+  const details = document.createElement("details");
+  if (expanded) details.open = true;
+
+  const summary = document.createElement("summary");
+  summary.className = `flex items-center gap-1.5 text-xs ${isRoot ? "font-bold" : "font-medium"} text-zinc-700 dark:text-zinc-300 cursor-pointer py-1.5 px-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/60 select-none`;
+  summary.innerHTML = `<i data-lucide="${isRoot ? "library" : "folder"}" class="w-3.5 h-3.5 text-zinc-400 shrink-0"></i><span class="truncate flex-1">${escapeHtml(name)}</span>`;
+  if (mode === "folder") {
+    pickerCtx.registerRow(libraryId + "::" + relativePath, summary);
+  }
+  details.appendChild(summary);
+
+  const childrenContainer = document.createElement("div");
+  childrenContainer.className = "pl-4 space-y-0.5";
+  details.appendChild(childrenContainer);
+
+  let built = false;
+  const buildChildren = async () => {
+    if (built) return;
+    built = true;
+    await populateNotePickerChildren(childrenContainer, dirHandle, relativePath, libraryId, pickerCtx, mode);
+    createIcons({ icons, root: childrenContainer });
+  };
+
+  summary.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (mode === "folder") {
+      pickerCtx.select({ libraryId, relativePath, name }, summary);
+    }
+    details.open = !details.open;
+    if (details.open) void buildChildren();
+  });
+
+  if (expanded) void buildChildren();
+
+  return details;
+}
+
+/** @param {"folder"|"file"} mode */
+async function populateNotePickerChildren(container, dirHandle, relativePath, libraryId, pickerCtx, mode) {
+  const directories = [];
+  const files = [];
+  for await (const [name, handle] of dirHandle.entries()) {
+    if (name.startsWith(".")) continue;
+    if (handle.kind === "directory") directories.push({ name, handle });
+    else if (handle.kind === "file" && /\.md$/i.test(name)) files.push({ name, handle });
+  }
+  directories.sort((a, b) => a.name.localeCompare(b.name));
+  files.sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const dir of directories) {
+    const childRelative = relativePath ? relativePath + "/" + dir.name : dir.name;
+    container.appendChild(buildNotePickerFolderNode(dir.handle, childRelative, dir.name, libraryId, pickerCtx, mode, false));
+  }
+
+  if (mode === "file") {
+    for (const file of files) {
+      const childRelative = relativePath ? relativePath + "/" + file.name : file.name;
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "flex items-center gap-1.5 w-full text-left text-xs font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer py-1.5 px-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/60 select-none";
+      row.innerHTML = `<i data-lucide="file-text" class="w-3.5 h-3.5 text-zinc-400 shrink-0"></i><span class="truncate flex-1">${escapeHtml(file.name)}</span>`;
+      row.addEventListener("click", () => pickerCtx.select({ libraryId, relativePath: childRelative, name: file.name, fileHandle: file.handle }, row));
+      pickerCtx.registerRow(libraryId + "::" + childRelative, row);
+      container.appendChild(row);
+    }
+  }
+}
+
+/**
+ * @param {"folder"|"file"} mode
+ * @returns {Promise<{libraryId:string, relativePath:string, name:string, fileHandle?:any}|null>}
+ */
+function pickNoteLocation(title, mode) {
+  return new Promise((resolve) => {
+    notePickerTitle.textContent = title;
+    notePickerTree.innerHTML = "";
+    notePickerSelect.disabled = true;
+
+    const pickerCtx = createNotePickerContext();
+
+    (async () => {
+      try {
+        for (const entry of state.libraryFolders) {
+          if (!(await hasReadWritePermission(entry.handle))) continue;
+          notePickerTree.appendChild(
+            buildNotePickerFolderNode(entry.handle, "", entry.name, entry.id, pickerCtx, mode, true, true)
+          );
+        }
+        createIcons({ icons, root: notePickerTree });
+      } catch (err) {
+        console.error("Error building note picker tree:", err);
+      }
+    })();
+
+    notePickerDialog.showModal();
+
+    function onCancel() {
+      cleanup();
+      resolve(null);
+    }
+    function onSelect() {
+      const sel = pickerCtx.getSelected();
+      cleanup();
+      resolve(sel);
+    }
+    function cleanup() {
+      notePickerDialog.close();
+      notePickerCancel.removeEventListener("click", onCancel);
+      notePickerSelect.removeEventListener("click", onSelect);
+    }
+    notePickerCancel.addEventListener("click", onCancel);
+    notePickerSelect.addEventListener("click", onSelect);
+  });
+}
+
+// ─── Create New Note dialog (creates a note and links it to a bookmark) ────
+
+let newNoteSelectedLocation = null;
+let newNoteBookmarkId = null;
+let newNoteOnLinked = null;
+
+function openCreateNoteDialog(bookmarkId, onLinked) {
+  newNoteNameInput.value = "";
+  newNoteError.classList.add("hidden");
+  newNoteSelectedLocation = null;
+  newNoteLocationLabel.textContent = "Choose location...";
+  newNoteLocationLabel.classList.add("text-zinc-400");
+  newNoteBookmarkId = bookmarkId;
+  newNoteOnLinked = onLinked || null;
+  newNoteDialog.showModal();
+  requestAnimationFrame(() => newNoteNameInput.focus());
+}
+
+newNoteLocationBtn?.addEventListener("click", async () => {
+  const picked = await pickNoteLocation("Choose a destination folder", "folder");
+  if (picked) {
+    newNoteSelectedLocation = picked;
+    newNoteLocationLabel.textContent = picked.relativePath ? `${picked.name} — ${picked.relativePath}` : picked.name;
+    newNoteLocationLabel.classList.remove("text-zinc-400");
+  }
+});
+
+newNoteCancel?.addEventListener("click", () => newNoteDialog.close());
+
+newNoteCreate?.addEventListener("click", async () => {
+  const rawName = newNoteNameInput.value.trim();
+  newNoteError.classList.add("hidden");
+  if (!rawName) {
+    newNoteError.textContent = "Please enter a name.";
+    newNoteError.classList.remove("hidden");
+    return;
+  }
+  if (!newNoteSelectedLocation) {
+    newNoteError.textContent = "Please choose a location.";
+    newNoteError.classList.remove("hidden");
+    return;
+  }
+
+  const fileName = /\.md$/i.test(rawName) ? rawName : rawName + ".md";
+  try {
+    const entry = state.libraryFolders.find(f => f.id === newNoteSelectedLocation.libraryId);
+    const dirHandle = await getDirectoryHandleByRootAndRelative(entry.handle, newNoteSelectedLocation.relativePath);
+    const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+    const id = await assignNoteId(fileHandle);
+    const relativePath = newNoteSelectedLocation.relativePath ? newNoteSelectedLocation.relativePath + "/" + fileName : fileName;
+
+    state.bookmarkNoteLinks[newNoteBookmarkId] = {
+      noteId: id,
+      hint: { libraryFolderId: entry.id, relativePath }
+    };
+    saveBookmarkNoteLinks();
+
+    newNoteDialog.close();
+    await refreshTree();
+    setStatus("Created note and linked it to the bookmark.");
+    newNoteOnLinked?.();
+  } catch (err) {
+    console.error("Error creating note:", err);
+    newNoteError.textContent = "Failed to create note.";
+    newNoteError.classList.remove("hidden");
+  }
+});
 
 // ─── Bookmark location picker (tree in picker mode) ────────────────────────
 // Reused by both the New Bookmark dialog and Save Opened Tabs.
