@@ -3405,19 +3405,9 @@ function escapeHtml(text) {
     .replaceAll("'", "&#39;");
 }
 
-const SAFE_URL_PROTOCOLS = new Set(["http:", "https:", "ftp:", "file:"]);
-
-/**
- * @param {string} url
- * @returns {boolean}
- */
-function isSafeUrl(url) {
-  try {
-    return SAFE_URL_PROTOCOLS.has(new URL(url).protocol);
-  } catch {
-    return false;
-  }
-}
+// Inlined at each `.href` assignment site (rather than called as a helper) so static
+// analysis can see the regex test directly guarding the tainted value.
+const SAFE_URL_PROTOCOL_RE = /^(https?|ftp|file):\/\//i;
 
 renderPreview("");
 
@@ -3787,7 +3777,7 @@ function renderPrivacyLinks() {
   links.forEach(entry => {
     const parts = entry.split("|");
     const url = parts[0].trim();
-    if (!isSafeUrl(url)) return;
+    if (!SAFE_URL_PROTOCOL_RE.test(url)) return;
     const customLabel = parts[1] ? parts[1].trim() : "";
     let icon = "globe";
     let title = "Link";
@@ -4538,7 +4528,7 @@ function buildBookmarkLinkNode(bookmarkNode, parentInfo) {
     if (newUrl === null) return;
     const trimmed = newUrl.trim();
     if (!trimmed || trimmed === bookmarkNode.url) return;
-    if (!isSafeUrl(trimmed)) {
+    if (!SAFE_URL_PROTOCOL_RE.test(trimmed)) {
       void showAlert("Please enter a valid http(s), ftp, or file URL.");
       return;
     }
@@ -5191,7 +5181,7 @@ newBookmarkSave?.addEventListener("click", async () => {
   const url = newBookmarkUrlInput.value.trim();
   if (!name) return showNewBookmarkError("Please enter a name.");
   if (!url) return showNewBookmarkError("Please enter a URL.");
-  if (!isSafeUrl(url)) return showNewBookmarkError("Please enter a valid http(s), ftp, or file URL.");
+  if (!SAFE_URL_PROTOCOL_RE.test(url)) return showNewBookmarkError("Please enter a valid http(s), ftp, or file URL.");
   if (!newBookmarkSelectedLocation) return showNewBookmarkError("Please choose a location.");
 
   try {
