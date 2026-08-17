@@ -12,7 +12,7 @@
     "@tailwindcss/postcss": "^4.2.4",
     "autoprefixer": "^10.5.0",
     "lucide": "^1.14.0",
-    "postcss": "^8.5.12",
+    "postcss": "^8.5.26",
     "tailwindcss": "^4.2.4",
     "vite": "^8.0.16"
   }
