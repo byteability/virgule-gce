@@ -20,3 +20,6 @@ coverage/
 *.swo
 *.swn
 .worktrees/
+.agent/
+openspec/
+.claude/
