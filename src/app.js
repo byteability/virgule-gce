@@ -249,10 +249,19 @@ const privacySearchForm = document.getElementById("privacy-search-form");
 const privacySearchInput = document.getElementById("privacy-search-input");
 const privacyHubSearchTab = document.getElementById("privacy-hub-search-tab");
 const privacyHubNoteTab = document.getElementById("privacy-hub-note-tab");
+const privacyHubCalendarTab = document.getElementById("privacy-hub-calendar-tab");
 const privacyHubSearchPane = document.getElementById("privacy-hub-search-pane");
 const privacyHubNotePane = document.getElementById("privacy-hub-note-pane");
+const privacyHubCalendarPane = document.getElementById("privacy-hub-calendar-pane");
 const privacyNoteInput = document.getElementById("privacy-note-input");
 const privacyNoteSaveBtn = document.getElementById("privacy-note-save-btn");
+const privacyCalendarLoading = document.getElementById("privacy-calendar-loading");
+const privacyCalendarSignedOut = document.getElementById("privacy-calendar-signed-out");
+const privacyCalendarSigninBtn = document.getElementById("privacy-calendar-signin-btn");
+const privacyCalendarEmpty = document.getElementById("privacy-calendar-empty");
+const privacyCalendarError = document.getElementById("privacy-calendar-error");
+const privacyCalendarErrorMessage = document.getElementById("privacy-calendar-error-message");
+const privacyCalendarEvents = document.getElementById("privacy-calendar-events");
 
 const privacyUnlockBtn = document.getElementById("privacy-unlock-btn");
 const privacyEnabledToggle = document.getElementById("privacy-enabled-toggle");
@@ -314,6 +323,8 @@ const PRIVACY_AI_KEY = "clio-notes-privacy-ai";
 const PRIVACY_PASSWORD_KEY = "clio-notes-privacy-password";
 const PRIVACY_LINKS_KEY = "clio-notes-privacy-links";
 const PRIVACY_TIMEZONE_KEY = "clio-notes-privacy-timezone";
+const PRIVACY_CALENDAR_CACHE_KEY = "clio-notes-privacy-calendar-cache";
+const PRIVACY_CALENDAR_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const AUTO_SAVE_KEY = "clio-notes-auto-save";
 const AUTO_SAVE_DELAY_KEY = "clio-notes-auto-save-delay";
 
@@ -3432,12 +3443,12 @@ async function initializePrivacyScreen() {
 
   // Hub Tab Switching
   const switchPrivacyTab = (tab) => {
-    [privacyHubSearchTab, privacyHubNoteTab].forEach(t => {
+    [privacyHubSearchTab, privacyHubNoteTab, privacyHubCalendarTab].forEach(t => {
       if (!t) return;
       t.classList.remove("bg-white/10", "shadow-lg");
       t.classList.add("text-white/40", "hover:bg-white/5");
     });
-    [privacyHubSearchPane, privacyHubNotePane].forEach(p => p?.classList.add("hidden"));
+    [privacyHubSearchPane, privacyHubNotePane, privacyHubCalendarPane].forEach(p => p?.classList.add("hidden"));
 
     if (tab === "search") {
       privacyHubSearchTab.classList.add("bg-white/10", "shadow-lg");
@@ -3448,12 +3459,29 @@ async function initializePrivacyScreen() {
       privacyHubNoteTab.classList.remove("text-white/40", "hover:bg-white/5");
       privacyHubNotePane.classList.remove("hidden");
       privacyNoteInput.focus();
+    } else if (tab === "calendar") {
+      privacyHubCalendarTab.classList.add("bg-white/10", "shadow-lg");
+      privacyHubCalendarTab.classList.remove("text-white/40", "hover:bg-white/5");
+      privacyHubCalendarPane.classList.remove("hidden");
+      void refreshPrivacyCalendar();
     }
     createIcons({ icons, root: privacyScreen });
   };
 
   privacyHubSearchTab?.addEventListener("click", () => switchPrivacyTab("search"));
   privacyHubNoteTab?.addEventListener("click", () => switchPrivacyTab("note"));
+  privacyHubCalendarTab?.addEventListener("click", () => switchPrivacyTab("calendar"));
+
+  privacyCalendarSigninBtn?.addEventListener("click", async () => {
+    try {
+      showPrivacyCalendarState("loading");
+      const token = await getPrivacyCalendarToken(true);
+      await loadPrivacyCalendarEvents(token);
+    } catch (err) {
+      console.error("Google Calendar sign-in failed:", err);
+      showPrivacyCalendarState("signed-out");
+    }
+  });
 
   // Quick Note Saving
   privacyNoteSaveBtn?.addEventListener("click", async () => {
@@ -3625,6 +3653,7 @@ async function initializePrivacyScreen() {
   updatePrivacyClock();
   setInterval(updatePrivacyClock, 1000);
   setInterval(checkPrivacyIdle, 10000); // Check every 10 seconds
+  setInterval(pollPrivacyCalendar, PRIVACY_CALENDAR_REFRESH_INTERVAL_MS);
 
   // Always open with lock screen turned on if enabled
   if (state.privacyEnabled && state.privacyStartLocked) {
@@ -3727,6 +3756,216 @@ function hidePrivacyScreen() {
   setTimeout(() => {
     privacyScreen.hidden = true;
   }, 150);
+}
+
+// ─── Lock Screen Calendar Tab ──────────────────────────────────────────────
+// Read-only Google Calendar agenda for the signed-in Chrome user's primary
+// calendar, scoped to the current day. See openspec/changes/
+// add-google-calendar-lock-screen-tab for the design behind these choices.
+
+function getPrivacyCalendarTodayRange() {
+  const timeZone = state.privacyTimezone !== "auto"
+    ? state.privacyTimezone
+    : Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const now = new Date();
+
+  const dateFmt = new Intl.DateTimeFormat("en-US", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit"
+  });
+  const dateParts = Object.fromEntries(dateFmt.formatToParts(now).map(p => [p.type, p.value]));
+  const dateKey = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+
+  const offsetFmt = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" });
+  const offsetPart = offsetFmt.formatToParts(now).find(p => p.type === "timeZoneName")?.value || "GMT+0";
+  const offsetMatch = offsetPart.match(/GMT([+-]\d{1,2})(?::?(\d{2}))?/);
+  let offset = "+00:00";
+  if (offsetMatch) {
+    const sign = offsetMatch[1].startsWith("-") ? "-" : "+";
+    const hours = String(Math.abs(parseInt(offsetMatch[1], 10))).padStart(2, "0");
+    const minutes = offsetMatch[2] || "00";
+    offset = `${sign}${hours}:${minutes}`;
+  }
+
+  return {
+    dateKey,
+    timeMin: `${dateKey}T00:00:00${offset}`,
+    timeMax: `${dateKey}T23:59:59${offset}`
+  };
+}
+
+function getPrivacyCalendarToken(interactive) {
+  return new Promise((resolve, reject) => {
+    if (typeof chrome === "undefined" || !chrome.identity) {
+      reject(new Error("chrome.identity is unavailable"));
+      return;
+    }
+    chrome.identity.getAuthToken({ interactive }, (token) => {
+      if (chrome.runtime.lastError || !token) {
+        reject(new Error(chrome.runtime.lastError?.message || "No auth token"));
+        return;
+      }
+      resolve(token);
+    });
+  });
+}
+
+async function fetchPrivacyCalendarEvents(token) {
+  const { timeMin, timeMax } = getPrivacyCalendarTodayRange();
+  const params = new URLSearchParams({
+    timeMin,
+    timeMax,
+    singleEvents: "true",
+    orderBy: "startTime",
+    maxResults: "20"
+  });
+
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+
+  if (!response.ok) {
+    const error = new Error(`Google Calendar request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
+
+  const data = await response.json();
+  return Array.isArray(data.items) ? data.items : [];
+}
+
+function readPrivacyCalendarCache() {
+  try {
+    const raw = localStorage.getItem(PRIVACY_CALENDAR_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writePrivacyCalendarCache(events, dateKey) {
+  try {
+    localStorage.setItem(PRIVACY_CALENDAR_CACHE_KEY, JSON.stringify({ events, fetchedAt: Date.now(), dateKey }));
+  } catch (err) {
+    console.error("Failed to cache calendar events:", err);
+  }
+}
+
+function showPrivacyCalendarState(name) {
+  [privacyCalendarLoading, privacyCalendarSignedOut, privacyCalendarEmpty, privacyCalendarError, privacyCalendarEvents]
+    .forEach(el => el?.classList.add("hidden"));
+
+  const target = {
+    loading: privacyCalendarLoading,
+    "signed-out": privacyCalendarSignedOut,
+    empty: privacyCalendarEmpty,
+    error: privacyCalendarError,
+    events: privacyCalendarEvents
+  }[name];
+
+  target?.classList.remove("hidden");
+  createIcons({ icons, root: privacyHubCalendarPane });
+}
+
+function formatPrivacyCalendarEventTime(event) {
+  const start = event.start || {};
+  if (start.date && !start.dateTime) return "All day";
+  if (!start.dateTime) return "";
+
+  const options = { hour: "2-digit", minute: "2-digit", hour12: false };
+  if (state.privacyTimezone !== "auto") options.timeZone = state.privacyTimezone;
+  return new Date(start.dateTime).toLocaleTimeString([], options);
+}
+
+function renderPrivacyCalendarEvents(events) {
+  if (!events || events.length === 0) {
+    showPrivacyCalendarState("empty");
+    return;
+  }
+
+  if (privacyCalendarEvents) {
+    privacyCalendarEvents.innerHTML = "";
+    events.forEach(event => {
+      const li = document.createElement("li");
+      li.className = "flex items-center gap-3 px-4 py-3 bg-white/5 border border-white/10 rounded-xl";
+
+      const time = document.createElement("span");
+      time.className = "text-xs font-bold text-white/40 uppercase tracking-tight shrink-0 w-16";
+      time.textContent = formatPrivacyCalendarEventTime(event);
+
+      const title = document.createElement("span");
+      title.className = "text-sm text-white truncate";
+      title.textContent = event.summary || "(No title)";
+
+      li.appendChild(time);
+      li.appendChild(title);
+      privacyCalendarEvents.appendChild(li);
+    });
+  }
+
+  showPrivacyCalendarState("events");
+}
+
+async function loadPrivacyCalendarEvents(token, { isRetry = false } = {}) {
+  const { dateKey } = getPrivacyCalendarTodayRange();
+  try {
+    const events = await fetchPrivacyCalendarEvents(token);
+    writePrivacyCalendarCache(events, dateKey);
+    renderPrivacyCalendarEvents(events);
+  } catch (err) {
+    console.error("Failed to load calendar events:", err);
+
+    if (err.status === 401 && !isRetry && chrome?.identity?.removeCachedAuthToken) {
+      chrome.identity.removeCachedAuthToken({ token }, async () => {
+        try {
+          const freshToken = await getPrivacyCalendarToken(false);
+          await loadPrivacyCalendarEvents(freshToken, { isRetry: true });
+        } catch {
+          showPrivacyCalendarState("signed-out");
+        }
+      });
+      return;
+    }
+
+    if (err.status === 401) {
+      showPrivacyCalendarState("signed-out");
+      return;
+    }
+
+    if (privacyCalendarErrorMessage) {
+      privacyCalendarErrorMessage.textContent = "Couldn't load your calendar. Please try again.";
+    }
+    showPrivacyCalendarState("error");
+  }
+}
+
+async function refreshPrivacyCalendar({ forceFetch = false } = {}) {
+  const { dateKey } = getPrivacyCalendarTodayRange();
+  const cache = readPrivacyCalendarCache();
+  const isFresh = !!cache
+    && cache.dateKey === dateKey
+    && (Date.now() - cache.fetchedAt) < PRIVACY_CALENDAR_REFRESH_INTERVAL_MS;
+
+  if (isFresh && !forceFetch) {
+    renderPrivacyCalendarEvents(cache.events);
+    return;
+  }
+
+  showPrivacyCalendarState("loading");
+  let token;
+  try {
+    token = await getPrivacyCalendarToken(false);
+  } catch {
+    showPrivacyCalendarState("signed-out");
+    return;
+  }
+  await loadPrivacyCalendarEvents(token);
+}
+
+function pollPrivacyCalendar() {
+  if (!state.privacyActive) return;
+  if (!privacyHubCalendarPane || privacyHubCalendarPane.classList.contains("hidden")) return;
+  void refreshPrivacyCalendar();
 }
 
 function initializeFloatingAi() {

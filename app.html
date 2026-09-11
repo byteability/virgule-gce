@@ -389,6 +389,9 @@
             <button id="privacy-hub-note-tab" class="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-white/40 hover:text-white rounded-2xl transition-all hover:bg-white/5">
               <i data-lucide="file-plus" class="w-4 h-4"></i> Quick Note
             </button>
+            <button id="privacy-hub-calendar-tab" class="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-white/40 hover:text-white rounded-2xl transition-all hover:bg-white/5">
+              <i data-lucide="calendar" class="w-4 h-4"></i> Calendar
+            </button>
           </div>
           
           <!-- Hub Content -->
@@ -432,6 +435,39 @@
                   <i data-lucide="save" class="w-4 h-4"></i> Save Note
                 </button>
               </div>
+            </div>
+
+            <!-- Calendar Pane -->
+            <div id="privacy-hub-calendar-pane" class="hidden flex flex-col gap-3 text-left min-h-[120px]">
+              <!-- Loading state -->
+              <div id="privacy-calendar-loading" class="hidden flex flex-col items-center justify-center gap-2 py-8 text-white/40 text-sm">
+                <i data-lucide="loader-circle" class="w-5 h-5 animate-spin"></i>
+                Loading your calendar...
+              </div>
+
+              <!-- Signed-out state -->
+              <div id="privacy-calendar-signed-out" class="hidden flex flex-col items-center justify-center gap-3 py-8 text-center">
+                <i data-lucide="calendar-off" class="w-6 h-6 text-white/30"></i>
+                <p class="text-sm text-white/50">Sign in to your Google account to see today's events.</p>
+                <button id="privacy-calendar-signin-btn" class="flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white text-sm font-bold transition-all">
+                  <i data-lucide="log-in" class="w-4 h-4"></i> Sign in to Google
+                </button>
+              </div>
+
+              <!-- Empty state -->
+              <div id="privacy-calendar-empty" class="hidden flex flex-col items-center justify-center gap-2 py-8 text-center">
+                <i data-lucide="calendar-check" class="w-6 h-6 text-white/30"></i>
+                <p class="text-sm text-white/50">No events for today.</p>
+              </div>
+
+              <!-- Error state -->
+              <div id="privacy-calendar-error" class="hidden flex flex-col items-center justify-center gap-2 py-8 text-center">
+                <i data-lucide="triangle-alert" class="w-6 h-6 text-white/30"></i>
+                <p id="privacy-calendar-error-message" class="text-sm text-white/50">Couldn't load your calendar. Please try again.</p>
+              </div>
+
+              <!-- Events list state -->
+              <ul id="privacy-calendar-events" class="hidden flex flex-col gap-2 max-h-72 overflow-y-auto custom-scrollbar"></ul>
             </div>
           </div>
         </div>
