@@ -44,7 +44,13 @@ import {
   ExternalLink,
   ChevronDown,
   Sparkles,
-  Bookmark
+  Bookmark,
+  Calendar,
+  LoaderCircle,
+  CalendarOff,
+  LogIn,
+  CalendarCheck,
+  TriangleAlert
 } from 'lucide';
 
 const icons = {
@@ -92,7 +98,13 @@ const icons = {
   Globe,
   ExternalLink,
   ChevronDown,
-  Sparkles
+  Sparkles,
+  Calendar,
+  LoaderCircle,
+  CalendarOff,
+  LogIn,
+  CalendarCheck,
+  TriangleAlert
 };
 
 class MockDirectoryHandle {
