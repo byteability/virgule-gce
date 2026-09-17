@@ -261,12 +261,11 @@ const privacySearchForm = document.getElementById("privacy-search-form");
 const privacySearchInput = document.getElementById("privacy-search-input");
 const privacyHubSearchTab = document.getElementById("privacy-hub-search-tab");
 const privacyHubNoteTab = document.getElementById("privacy-hub-note-tab");
-const privacyHubCalendarTab = document.getElementById("privacy-hub-calendar-tab");
 const privacyHubSearchPane = document.getElementById("privacy-hub-search-pane");
 const privacyHubNotePane = document.getElementById("privacy-hub-note-pane");
-const privacyHubCalendarPane = document.getElementById("privacy-hub-calendar-pane");
 const privacyNoteInput = document.getElementById("privacy-note-input");
 const privacyNoteSaveBtn = document.getElementById("privacy-note-save-btn");
+const privacyCalendarCard = document.getElementById("privacy-calendar-card");
 const privacyCalendarLoading = document.getElementById("privacy-calendar-loading");
 const privacyCalendarSignedOut = document.getElementById("privacy-calendar-signed-out");
 const privacyCalendarSigninBtn = document.getElementById("privacy-calendar-signin-btn");
@@ -3455,12 +3454,12 @@ async function initializePrivacyScreen() {
 
   // Hub Tab Switching
   const switchPrivacyTab = (tab) => {
-    [privacyHubSearchTab, privacyHubNoteTab, privacyHubCalendarTab].forEach(t => {
+    [privacyHubSearchTab, privacyHubNoteTab].forEach(t => {
       if (!t) return;
       t.classList.remove("bg-white/10", "shadow-lg");
       t.classList.add("text-white/40", "hover:bg-white/5");
     });
-    [privacyHubSearchPane, privacyHubNotePane, privacyHubCalendarPane].forEach(p => p?.classList.add("hidden"));
+    [privacyHubSearchPane, privacyHubNotePane].forEach(p => p?.classList.add("hidden"));
 
     if (tab === "search") {
       privacyHubSearchTab.classList.add("bg-white/10", "shadow-lg");
@@ -3471,18 +3470,12 @@ async function initializePrivacyScreen() {
       privacyHubNoteTab.classList.remove("text-white/40", "hover:bg-white/5");
       privacyHubNotePane.classList.remove("hidden");
       privacyNoteInput.focus();
-    } else if (tab === "calendar") {
-      privacyHubCalendarTab.classList.add("bg-white/10", "shadow-lg");
-      privacyHubCalendarTab.classList.remove("text-white/40", "hover:bg-white/5");
-      privacyHubCalendarPane.classList.remove("hidden");
-      void refreshPrivacyCalendar();
     }
     createIcons({ icons, root: privacyScreen });
   };
 
   privacyHubSearchTab?.addEventListener("click", () => switchPrivacyTab("search"));
   privacyHubNoteTab?.addEventListener("click", () => switchPrivacyTab("note"));
-  privacyHubCalendarTab?.addEventListener("click", () => switchPrivacyTab("calendar"));
 
   privacyCalendarSigninBtn?.addEventListener("click", async () => {
     try {
@@ -3717,7 +3710,10 @@ function showPrivacyScreen() {
   
   // Render Links
   renderPrivacyLinks();
-  
+
+  // Refresh calendar card
+  void refreshPrivacyCalendar();
+
   // Trigger animations
   setTimeout(() => {
     privacyScreen.classList.add("opacity-100");
@@ -3876,7 +3872,7 @@ function showPrivacyCalendarState(name) {
   }[name];
 
   target?.classList.remove("hidden");
-  createIcons({ icons, root: privacyHubCalendarPane });
+  createIcons({ icons, root: privacyCalendarCard });
 }
 
 function formatPrivacyCalendarEventTime(event) {
@@ -3976,7 +3972,6 @@ async function refreshPrivacyCalendar({ forceFetch = false } = {}) {
 
 function pollPrivacyCalendar() {
   if (!state.privacyActive) return;
-  if (!privacyHubCalendarPane || privacyHubCalendarPane.classList.contains("hidden")) return;
   void refreshPrivacyCalendar();
 }
 
