@@ -50,7 +50,9 @@ import {
   CalendarOff,
   LogIn,
   CalendarCheck,
-  TriangleAlert
+  TriangleAlert,
+  Copy,
+  Check
 } from 'lucide';
 
 const icons = {
@@ -104,7 +106,9 @@ const icons = {
   CalendarOff,
   LogIn,
   CalendarCheck,
-  TriangleAlert
+  TriangleAlert,
+  Copy,
+  Check
 };
 
 class MockDirectoryHandle {
@@ -218,6 +222,18 @@ function setupMockLibrary() {
 
 const settingsBtn = document.getElementById("settings-btn");
 const settingsPanel = document.getElementById("settings-panel");
+const calendarSettingsSection = document.getElementById("calendar-settings");
+const calendarSetupBtn = document.getElementById("calendar-setup-btn");
+const calendarSetupBtnLabel = document.getElementById("calendar-setup-btn-label");
+const calendarDisconnectBtn = document.getElementById("calendar-disconnect-btn");
+const calendarSettingsStatus = document.getElementById("calendar-settings-status");
+const calendarWizard = document.getElementById("calendar-wizard");
+const calendarWizardSteps = document.querySelectorAll(".calendar-wizard-step");
+const calendarWizardDots = document.querySelectorAll(".calendar-wizard-dot");
+const calendarWizardBackBtn = document.getElementById("calendar-wizard-back");
+const calendarWizardNextBtn = document.getElementById("calendar-wizard-next");
+const calendarClientIdInput = document.getElementById("calendar-client-id-input");
+const calendarWizardResult = document.getElementById("calendar-wizard-result");
 const closeSettingsBtn = document.getElementById("close-settings-btn");
 const addLibraryFolderBtn = document.getElementById("add-library-folder-btn");
 const libraryList = document.getElementById("library-list");
@@ -269,6 +285,7 @@ const privacyCalendarCard = document.getElementById("privacy-calendar-card");
 const privacyCalendarLoading = document.getElementById("privacy-calendar-loading");
 const privacyCalendarSignedOut = document.getElementById("privacy-calendar-signed-out");
 const privacyCalendarSigninBtn = document.getElementById("privacy-calendar-signin-btn");
+const privacyCalendarSignedOutMessage = document.getElementById("privacy-calendar-signed-out-message");
 const privacyCalendarEmpty = document.getElementById("privacy-calendar-empty");
 const privacyCalendarError = document.getElementById("privacy-calendar-error");
 const privacyCalendarErrorMessage = document.getElementById("privacy-calendar-error-message");
@@ -336,6 +353,9 @@ const PRIVACY_LINKS_KEY = "clio-notes-privacy-links";
 const PRIVACY_TIMEZONE_KEY = "clio-notes-privacy-timezone";
 const PRIVACY_CALENDAR_CACHE_KEY = "clio-notes-privacy-calendar-cache";
 const PRIVACY_CALENDAR_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const PRIVACY_CALENDAR_CLIENT_ID_KEY = "clio-notes-privacy-calendar-client-id";
+const PRIVACY_CALENDAR_TOKEN_KEY = "clio-notes-privacy-calendar-token";
+const PRIVACY_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 const AUTO_SAVE_KEY = "clio-notes-auto-save";
 const AUTO_SAVE_DELAY_KEY = "clio-notes-auto-save-delay";
 
@@ -715,6 +735,7 @@ contextMenuItems.forEach((item) => {
 });
 
 initializeHomepageSettings();
+initializeCalendarSettings();
 void initializeLibrary();
 
 const savedExplorerVisible = localStorage.getItem(EXPLORER_VISIBLE_KEY);
@@ -3484,7 +3505,7 @@ async function initializePrivacyScreen() {
       await loadPrivacyCalendarEvents(token);
     } catch (err) {
       console.error("Google Calendar sign-in failed:", err);
-      showPrivacyCalendarState("signed-out");
+      showPrivacyCalendarSignedOut(err);
     }
   });
 
@@ -3770,6 +3791,11 @@ function hidePrivacyScreen() {
 // Read-only Google Calendar agenda for the signed-in Chrome user's primary
 // calendar, scoped to the current day. See openspec/changes/
 // add-google-calendar-lock-screen-tab for the design behind these choices.
+//
+// Auth uses chrome.identity.launchWebAuthFlow with an OAuth client ID the
+// user registers via the Settings wizard (a manifest oauth2.client_id can't
+// be set at runtime, which getAuthToken would require). login_hint pins the
+// flow to the Chrome profile's account; silent refreshes use prompt=none.
 
 function getPrivacyCalendarTodayRange() {
   const timeZone = state.privacyTimezone !== "auto"
@@ -3801,20 +3827,111 @@ function getPrivacyCalendarTodayRange() {
   };
 }
 
-function getPrivacyCalendarToken(interactive) {
-  return new Promise((resolve, reject) => {
-    if (typeof chrome === "undefined" || !chrome.identity) {
-      reject(new Error("chrome.identity is unavailable"));
+function getPrivacyCalendarClientId() {
+  return (localStorage.getItem(PRIVACY_CALENDAR_CLIENT_ID_KEY) || "").trim();
+}
+
+function getPrivacyCalendarRedirectUrl() {
+  return typeof chrome !== "undefined" && chrome.identity?.getRedirectURL
+    ? chrome.identity.getRedirectURL()
+    : "";
+}
+
+function getChromeProfileEmail() {
+  return new Promise((resolve) => {
+    if (typeof chrome === "undefined" || !chrome.identity?.getProfileUserInfo) {
+      resolve("");
       return;
     }
-    chrome.identity.getAuthToken({ interactive }, (token) => {
-      if (chrome.runtime.lastError || !token) {
-        reject(new Error(chrome.runtime.lastError?.message || "No auth token"));
-        return;
-      }
-      resolve(token);
+    chrome.identity.getProfileUserInfo({ accountStatus: "ANY" }, (info) => {
+      resolve(chrome.runtime.lastError ? "" : (info?.email || ""));
     });
   });
+}
+
+function readPrivacyCalendarStoredToken() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PRIVACY_CALENDAR_TOKEN_KEY) || "null");
+    if (stored?.accessToken && stored.expiresAt - 60 * 1000 > Date.now()) return stored.accessToken;
+  } catch {
+    // Fall through to a fresh token request
+  }
+  return "";
+}
+
+function clearPrivacyCalendarStoredToken() {
+  localStorage.removeItem(PRIVACY_CALENDAR_TOKEN_KEY);
+}
+
+function createPrivacyCalendarAuthError(code, message) {
+  const error = new Error(message || code);
+  error.code = code;
+  return error;
+}
+
+async function getPrivacyCalendarToken(interactive, clientId = getPrivacyCalendarClientId()) {
+  if (!clientId) throw createPrivacyCalendarAuthError("not-configured", "No Google OAuth client ID configured");
+  if (typeof chrome === "undefined" || !chrome.identity?.launchWebAuthFlow) {
+    throw createPrivacyCalendarAuthError("unavailable", "chrome.identity is unavailable");
+  }
+
+  const cached = readPrivacyCalendarStoredToken();
+  if (cached && !interactive) return cached;
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    response_type: "token",
+    redirect_uri: getPrivacyCalendarRedirectUrl(),
+    scope: PRIVACY_CALENDAR_SCOPE,
+    include_granted_scopes: "true"
+  });
+  const email = await getChromeProfileEmail();
+  if (email) params.set("login_hint", email);
+  if (!interactive) params.set("prompt", "none");
+
+  const responseUrl = await new Promise((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow(
+      {
+        url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
+        interactive,
+        // Google's prompt=none response can redirect after page load; give it time
+        abortOnLoadForNonInteractive: false,
+        timeoutMsForNonInteractive: 10000
+      },
+      (url) => {
+        if (chrome.runtime.lastError || !url) {
+          reject(createPrivacyCalendarAuthError("needs-consent", chrome.runtime.lastError?.message || "Authorization was not completed"));
+          return;
+        }
+        resolve(url);
+      }
+    );
+  });
+
+  const result = new URLSearchParams(new URL(responseUrl).hash.slice(1));
+  const errorCode = result.get("error");
+  if (errorCode) throw createPrivacyCalendarAuthError("needs-consent", `Google authorization failed: ${errorCode}`);
+
+  const accessToken = result.get("access_token");
+  if (!accessToken) throw createPrivacyCalendarAuthError("needs-consent", "Google returned no access token");
+
+  const expiresIn = parseInt(result.get("expires_in") || "3600", 10);
+  localStorage.setItem(PRIVACY_CALENDAR_TOKEN_KEY, JSON.stringify({
+    accessToken,
+    expiresAt: Date.now() + expiresIn * 1000
+  }));
+  return accessToken;
+}
+
+function showPrivacyCalendarSignedOut(err) {
+  const notConfigured = err?.code === "not-configured";
+  if (privacyCalendarSignedOutMessage) {
+    privacyCalendarSignedOutMessage.textContent = notConfigured
+      ? "Connect Google Calendar in Settings to see today's events."
+      : "Reconnect Google Calendar to see today's events.";
+  }
+  privacyCalendarSigninBtn?.classList.toggle("hidden", notConfigured);
+  showPrivacyCalendarState("signed-out");
 }
 
 async function fetchPrivacyCalendarEvents(token) {
@@ -3923,20 +4040,20 @@ async function loadPrivacyCalendarEvents(token, { isRetry = false } = {}) {
   } catch (err) {
     console.error("Failed to load calendar events:", err);
 
-    if (err.status === 401 && !isRetry && chrome?.identity?.removeCachedAuthToken) {
-      chrome.identity.removeCachedAuthToken({ token }, async () => {
-        try {
-          const freshToken = await getPrivacyCalendarToken(false);
-          await loadPrivacyCalendarEvents(freshToken, { isRetry: true });
-        } catch {
-          showPrivacyCalendarState("signed-out");
-        }
-      });
+    if (err.status === 401 && !isRetry) {
+      clearPrivacyCalendarStoredToken();
+      try {
+        const freshToken = await getPrivacyCalendarToken(false);
+        await loadPrivacyCalendarEvents(freshToken, { isRetry: true });
+      } catch (retryErr) {
+        showPrivacyCalendarSignedOut(retryErr);
+      }
       return;
     }
 
     if (err.status === 401) {
-      showPrivacyCalendarState("signed-out");
+      clearPrivacyCalendarStoredToken();
+      showPrivacyCalendarSignedOut(err);
       return;
     }
 
@@ -3963,8 +4080,8 @@ async function refreshPrivacyCalendar({ forceFetch = false } = {}) {
   let token;
   try {
     token = await getPrivacyCalendarToken(false);
-  } catch {
-    showPrivacyCalendarState("signed-out");
+  } catch (err) {
+    showPrivacyCalendarSignedOut(err);
     return;
   }
   await loadPrivacyCalendarEvents(token);
@@ -3973,6 +4090,175 @@ async function refreshPrivacyCalendar({ forceFetch = false } = {}) {
 function pollPrivacyCalendar() {
   if (!state.privacyActive) return;
   void refreshPrivacyCalendar();
+}
+
+// ─── Settings: Google Calendar connection wizard ──────────────────────────
+
+const CALENDAR_WIZARD_LAST_STEP = 3;
+let calendarWizardStep = 0;
+let calendarWizardBusy = false;
+
+function initializeCalendarSettings() {
+  if (!calendarSettingsSection) return;
+
+  const scopeEl = document.getElementById("calendar-wizard-scope");
+  const redirectEl = document.getElementById("calendar-wizard-redirect");
+  if (scopeEl) scopeEl.textContent = PRIVACY_CALENDAR_SCOPE;
+  if (redirectEl) redirectEl.textContent = getPrivacyCalendarRedirectUrl() || "Unavailable outside the extension";
+
+  void getChromeProfileEmail().then((email) => {
+    if (!email) return;
+    calendarSettingsSection.querySelectorAll(".calendar-wizard-email").forEach((el) => {
+      el.textContent = email;
+    });
+  });
+
+  calendarSettingsSection.querySelectorAll(".calendar-copy-btn").forEach((btn) => {
+    btn.addEventListener("click", () => void copyCalendarWizardValue(btn));
+  });
+
+  calendarSetupBtn?.addEventListener("click", () => openCalendarWizard());
+  calendarDisconnectBtn?.addEventListener("click", disconnectCalendar);
+  calendarWizardBackBtn?.addEventListener("click", () => {
+    if (calendarWizardStep === 0) closeCalendarWizard();
+    else showCalendarWizardStep(calendarWizardStep - 1);
+  });
+  calendarWizardNextBtn?.addEventListener("click", () => {
+    if (calendarWizardStep < CALENDAR_WIZARD_LAST_STEP) showCalendarWizardStep(calendarWizardStep + 1);
+    else void connectCalendarFromWizard();
+  });
+  calendarClientIdInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") void connectCalendarFromWizard();
+  });
+
+  renderCalendarSettingsStatus();
+}
+
+function renderCalendarSettingsStatus() {
+  const connected = !!getPrivacyCalendarClientId();
+  if (calendarSettingsStatus) {
+    calendarSettingsStatus.textContent = connected
+      ? "Connected. Today's events appear on the lock screen."
+      : "Show today's events from your Google Calendar on the lock screen.";
+  }
+  if (calendarSetupBtnLabel) calendarSetupBtnLabel.textContent = connected ? "Reconfigure" : "Connect";
+  calendarDisconnectBtn?.classList.toggle("hidden", !connected);
+}
+
+function openCalendarWizard() {
+  if (!calendarWizard) return;
+  calendarWizard.hidden = false;
+  if (calendarClientIdInput) calendarClientIdInput.value = getPrivacyCalendarClientId();
+  setCalendarWizardResult("");
+  // Already have a client ID → jump straight to the connect step
+  showCalendarWizardStep(getPrivacyCalendarClientId() ? CALENDAR_WIZARD_LAST_STEP : 0);
+}
+
+function closeCalendarWizard() {
+  if (calendarWizard) calendarWizard.hidden = true;
+}
+
+function showCalendarWizardStep(step) {
+  calendarWizardStep = step;
+  calendarWizardSteps.forEach((el, i) => { el.hidden = i !== step; });
+  calendarWizardDots.forEach((dot, i) => {
+    dot.classList.toggle("bg-[var(--color-accent)]", i <= step);
+    dot.classList.toggle("bg-zinc-200", i > step);
+    dot.classList.toggle("dark:bg-zinc-800", i > step);
+  });
+  if (calendarWizardBackBtn) calendarWizardBackBtn.textContent = step === 0 ? "Cancel" : "Back";
+  if (calendarWizardNextBtn) calendarWizardNextBtn.textContent = step === CALENDAR_WIZARD_LAST_STEP ? "Connect" : "Next";
+  if (step === CALENDAR_WIZARD_LAST_STEP) calendarClientIdInput?.focus();
+  createIcons({ icons, root: calendarWizard });
+}
+
+function setCalendarWizardResult(message, isError = false) {
+  if (!calendarWizardResult) return;
+  calendarWizardResult.hidden = !message;
+  calendarWizardResult.textContent = message;
+  calendarWizardResult.classList.toggle("text-red-500", isError);
+  calendarWizardResult.classList.toggle("text-emerald-600", !isError);
+}
+
+async function copyCalendarWizardValue(btn) {
+  const target = document.getElementById(btn.dataset.copyTarget || "");
+  if (!target) return;
+  try {
+    await navigator.clipboard.writeText(target.textContent.trim());
+    btn.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5"></i>';
+    createIcons({ icons, root: btn });
+    setTimeout(() => {
+      btn.innerHTML = '<i data-lucide="copy" class="w-3.5 h-3.5"></i>';
+      createIcons({ icons, root: btn });
+    }, 1500);
+  } catch (err) {
+    console.error("Failed to copy:", err);
+  }
+}
+
+async function connectCalendarFromWizard() {
+  if (calendarWizardBusy) return;
+  const clientId = (calendarClientIdInput?.value || "").trim();
+  if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId)) {
+    setCalendarWizardResult("That doesn't look like a client ID — it should end in .apps.googleusercontent.com.", true);
+    return;
+  }
+
+  calendarWizardBusy = true;
+  if (calendarWizardNextBtn) {
+    calendarWizardNextBtn.disabled = true;
+    calendarWizardNextBtn.textContent = "Connecting…";
+  }
+  setCalendarWizardResult("");
+
+  try {
+    clearPrivacyCalendarStoredToken();
+    const token = await getPrivacyCalendarToken(true, clientId);
+    const events = await fetchPrivacyCalendarEvents(token);
+
+    localStorage.setItem(PRIVACY_CALENDAR_CLIENT_ID_KEY, clientId);
+    writePrivacyCalendarCache(events, getPrivacyCalendarTodayRange().dateKey);
+    renderPrivacyCalendarEvents(events);
+    renderCalendarSettingsStatus();
+
+    const count = events.length;
+    setCalendarWizardResult(`Connected — ${count} event${count === 1 ? "" : "s"} today.`);
+    setTimeout(closeCalendarWizard, 2000);
+  } catch (err) {
+    console.error("Google Calendar connection failed:", err);
+    clearPrivacyCalendarStoredToken();
+    setCalendarWizardResult(describeCalendarConnectError(err), true);
+  } finally {
+    calendarWizardBusy = false;
+    if (calendarWizardNextBtn) {
+      calendarWizardNextBtn.disabled = false;
+      calendarWizardNextBtn.textContent = "Connect";
+    }
+  }
+}
+
+function describeCalendarConnectError(err) {
+  const message = err?.message || "";
+  if (err?.status === 403) return "Google refused the request — check the Google Calendar API is enabled in this project (step 1).";
+  if (/redirect_uri_mismatch/.test(message)) return "Redirect URI mismatch — add the exact URI from step 3 to the OAuth client.";
+  if (/access_denied/.test(message)) return "Access was denied. If you're not listed as a test user (step 2), add yourself and try again.";
+  if (/invalid_client|unauthorized_client/.test(message)) return "Google didn't recognise that client ID — make sure it's a Web application client.";
+  if (/did not approve|not completed|closed/i.test(message)) return "The Google window was closed before access was granted.";
+  return `Couldn't connect: ${message || "unknown error"}`;
+}
+
+function disconnectCalendar() {
+  const token = readPrivacyCalendarStoredToken();
+  if (token) {
+    // Best-effort revoke; local state is cleared regardless
+    fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, { method: "POST" }).catch(() => {});
+  }
+  localStorage.removeItem(PRIVACY_CALENDAR_CLIENT_ID_KEY);
+  localStorage.removeItem(PRIVACY_CALENDAR_CACHE_KEY);
+  clearPrivacyCalendarStoredToken();
+  closeCalendarWizard();
+  renderCalendarSettingsStatus();
+  showPrivacyCalendarSignedOut(createPrivacyCalendarAuthError("not-configured"));
 }
 
 function initializeFloatingAi() {
