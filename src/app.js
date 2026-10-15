@@ -48,7 +48,15 @@ import {
   BookmarkPlus,
   MoreVertical,
   GripVertical,
-  Link
+  Link,
+  Calendar,
+  LoaderCircle,
+  CalendarOff,
+  LogIn,
+  CalendarCheck,
+  TriangleAlert,
+  Copy,
+  Check
 } from 'lucide';
 
 const icons = {
