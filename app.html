@@ -143,6 +143,109 @@
             </div>
           </section>
 
+          <!-- Google Calendar Section -->
+          <section id="calendar-settings" class="mb-6 bg-zinc-50 dark:bg-zinc-900/30 rounded-2xl p-5 border border-zinc-200/60 dark:border-zinc-800/60">
+            <div class="flex items-center justify-between mb-1">
+              <h2 class="text-sm font-bold uppercase tracking-wider text-zinc-500">Google Calendar</h2>
+              <div class="flex items-center gap-2">
+                <button id="calendar-disconnect-btn" class="hidden text-xs px-3 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700 rounded-xl font-bold transition-all" type="button">Disconnect</button>
+                <button id="calendar-setup-btn" class="text-xs px-3 py-2 bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg shadow-[var(--color-accent)]/15 active:scale-95 duration-200" type="button">
+                  <i data-lucide="calendar" class="w-4 h-4"></i> <span id="calendar-setup-btn-label">Connect</span>
+                </button>
+              </div>
+            </div>
+            <p id="calendar-settings-status" class="text-xs text-zinc-400 mb-1">Show today's events from your Google Calendar on the lock screen.</p>
+
+            <div id="calendar-wizard" class="mt-4" hidden>
+              <ol id="calendar-wizard-progress" class="flex items-center gap-2 mb-4">
+                <li class="calendar-wizard-dot flex-1 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800"></li>
+                <li class="calendar-wizard-dot flex-1 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800"></li>
+                <li class="calendar-wizard-dot flex-1 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800"></li>
+                <li class="calendar-wizard-dot flex-1 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800"></li>
+              </ol>
+
+              <!-- Step 1 -->
+              <div class="calendar-wizard-step space-y-3 text-sm text-zinc-600 dark:text-zinc-300">
+                <p class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Step 1 of 4 · Google Cloud project</p>
+                <p>Google requires every app that reads your calendar to have its own OAuth client. You set this up once, in a free Google Cloud project, while signed in as <strong class="calendar-wizard-email">your Chrome account</strong>.</p>
+                <div class="flex flex-col gap-2">
+                  <a class="flex items-center justify-between gap-2 px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm font-medium hover:border-[var(--color-accent)] transition-colors" href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">
+                    1. Create a project (e.g. "Virgule") <i data-lucide="external-link" class="w-4 h-4 text-zinc-400"></i>
+                  </a>
+                  <a class="flex items-center justify-between gap-2 px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm font-medium hover:border-[var(--color-accent)] transition-colors" href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com" target="_blank" rel="noopener">
+                    2. Enable the Google Calendar API <i data-lucide="external-link" class="w-4 h-4 text-zinc-400"></i>
+                  </a>
+                </div>
+                <p class="text-xs text-zinc-400">Make sure the new project is selected in the Console's project picker before enabling the API.</p>
+              </div>
+
+              <!-- Step 2 -->
+              <div class="calendar-wizard-step space-y-3 text-sm text-zinc-600 dark:text-zinc-300" hidden>
+                <p class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Step 2 of 4 · Consent screen</p>
+                <a class="flex items-center justify-between gap-2 px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm font-medium hover:border-[var(--color-accent)] transition-colors" href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noopener">
+                  Open Google Auth Platform <i data-lucide="external-link" class="w-4 h-4 text-zinc-400"></i>
+                </a>
+                <ul class="list-disc pl-5 space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  <li>Click <strong>Get started</strong>, name the app "Virgule", choose audience <strong>External</strong>.</li>
+                  <li>Under <strong>Audience → Test users</strong>, add your Google account.</li>
+                  <li>Under <strong>Data access → Add or remove scopes</strong>, add the scope below.</li>
+                </ul>
+                <div class="space-y-2">
+                  <div class="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl">
+                    <div class="flex items-center justify-between mb-1">
+                      <p class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Test user</p>
+                      <button class="calendar-copy-btn p-1 text-zinc-400 hover:text-[var(--color-accent)] rounded-lg" type="button" data-copy-target="calendar-wizard-test-user" title="Copy"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button>
+                    </div>
+                    <code id="calendar-wizard-test-user" class="calendar-wizard-email text-xs text-[var(--color-accent)] break-all select-all font-mono">your Google account email</code>
+                  </div>
+                  <div class="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl">
+                    <div class="flex items-center justify-between mb-1">
+                      <p class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Scope</p>
+                      <button class="calendar-copy-btn p-1 text-zinc-400 hover:text-[var(--color-accent)] rounded-lg" type="button" data-copy-target="calendar-wizard-scope" title="Copy"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button>
+                    </div>
+                    <code id="calendar-wizard-scope" class="text-xs text-[var(--color-accent)] break-all select-all font-mono"></code>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 3 -->
+              <div class="calendar-wizard-step space-y-3 text-sm text-zinc-600 dark:text-zinc-300" hidden>
+                <p class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Step 3 of 4 · OAuth client</p>
+                <a class="flex items-center justify-between gap-2 px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm font-medium hover:border-[var(--color-accent)] transition-colors" href="https://console.cloud.google.com/auth/clients/create" target="_blank" rel="noopener">
+                  Create OAuth client <i data-lucide="external-link" class="w-4 h-4 text-zinc-400"></i>
+                </a>
+                <ul class="list-disc pl-5 space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  <li>Application type: <strong>Web application</strong>.</li>
+                  <li>Under <strong>Authorized redirect URIs</strong>, add the URI below exactly (including the trailing slash).</li>
+                  <li>Click <strong>Create</strong> and copy the <strong>Client ID</strong>.</li>
+                </ul>
+                <div class="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl">
+                  <div class="flex items-center justify-between mb-1">
+                    <p class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Authorized redirect URI</p>
+                    <button class="calendar-copy-btn p-1 text-zinc-400 hover:text-[var(--color-accent)] rounded-lg" type="button" data-copy-target="calendar-wizard-redirect" title="Copy"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button>
+                  </div>
+                  <code id="calendar-wizard-redirect" class="text-xs text-[var(--color-accent)] break-all select-all font-mono"></code>
+                </div>
+              </div>
+
+              <!-- Step 4 -->
+              <div class="calendar-wizard-step space-y-3 text-sm text-zinc-600 dark:text-zinc-300" hidden>
+                <p class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Step 4 of 4 · Connect</p>
+                <div>
+                  <label class="block text-xs font-bold text-zinc-400 mb-2 uppercase tracking-tight" for="calendar-client-id-input">Client ID</label>
+                  <input id="calendar-client-id-input" type="text" spellcheck="false" placeholder="1234567890-abc.apps.googleusercontent.com" class="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-sm font-mono focus:ring-2 focus:ring-[var(--color-accent)]/20 focus:border-[var(--color-accent)] outline-none" />
+                </div>
+                <p class="text-xs text-zinc-400">Google will ask you once to allow read-only calendar access. While the app is in Testing it shows a "Google hasn't verified this app" warning — choose <strong>Continue</strong>.</p>
+                <p id="calendar-wizard-result" class="text-xs font-medium" hidden></p>
+              </div>
+
+              <div class="flex items-center justify-between mt-5">
+                <button id="calendar-wizard-back" class="text-xs px-3 py-2 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 rounded-xl font-bold transition-all" type="button">Cancel</button>
+                <button id="calendar-wizard-next" class="text-xs px-4 py-2 bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] rounded-xl font-bold transition-all active:scale-95 duration-200 disabled:opacity-50" type="button">Next</button>
+              </div>
+            </div>
+          </section>
+
           <section class="bg-zinc-50 dark:bg-zinc-900/30 rounded-2xl p-5 border border-zinc-200/60 dark:border-zinc-800/60">
             <div class="flex items-center justify-between mb-4">
               <h2 class="text-sm font-bold uppercase tracking-wider text-zinc-500">Chrome Homepage</h2>
@@ -439,6 +542,45 @@
 
         <!-- Shortcuts -->
         <div id="privacy-shortcuts" class="flex flex-wrap items-center justify-center gap-6"></div>
+
+        <!-- Calendar Card -->
+        <div id="privacy-calendar-card" class="w-full bg-white/10 backdrop-blur-2xl border border-white/20 rounded-[2rem] shadow-2xl overflow-hidden flex flex-col">
+          <div class="flex items-center gap-2 px-6 py-4 border-b border-white/10 bg-white/5">
+            <i data-lucide="calendar" class="w-4 h-4 text-white/70"></i>
+            <span class="text-sm font-bold text-white/80">Today</span>
+          </div>
+          <div class="p-6 flex flex-col gap-3 text-left min-h-[120px]">
+            <!-- Loading state -->
+            <div id="privacy-calendar-loading" class="hidden flex flex-col items-center justify-center gap-2 py-8 text-white/40 text-sm">
+              <i data-lucide="loader-circle" class="w-5 h-5 animate-spin"></i>
+              Loading your calendar...
+            </div>
+
+            <!-- Signed-out state -->
+            <div id="privacy-calendar-signed-out" class="hidden flex flex-col items-center justify-center gap-3 py-8 text-center">
+              <i data-lucide="calendar-off" class="w-6 h-6 text-white/30"></i>
+              <p id="privacy-calendar-signed-out-message" class="text-sm text-white/50">Reconnect Google Calendar to see today's events.</p>
+              <button id="privacy-calendar-signin-btn" class="flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white text-sm font-bold transition-all">
+                <i data-lucide="log-in" class="w-4 h-4"></i> Reconnect
+              </button>
+            </div>
+
+            <!-- Empty state -->
+            <div id="privacy-calendar-empty" class="hidden flex flex-col items-center justify-center gap-2 py-8 text-center">
+              <i data-lucide="calendar-check" class="w-6 h-6 text-white/30"></i>
+              <p class="text-sm text-white/50">No events for today.</p>
+            </div>
+
+            <!-- Error state -->
+            <div id="privacy-calendar-error" class="hidden flex flex-col items-center justify-center gap-2 py-8 text-center">
+              <i data-lucide="triangle-alert" class="w-6 h-6 text-white/30"></i>
+              <p id="privacy-calendar-error-message" class="text-sm text-white/50">Couldn't load your calendar. Please try again.</p>
+            </div>
+
+            <!-- Events list state -->
+            <ul id="privacy-calendar-events" class="hidden flex flex-col gap-2 max-h-72 overflow-y-auto custom-scrollbar"></ul>
+          </div>
+        </div>
       </div>
 
       <div id="privacy-auth-container" class="fixed inset-0 z-[110] flex flex-col items-center justify-center bg-zinc-950/90 backdrop-blur-2xl transition-all duration-500 opacity-0 pointer-events-none" hidden>
