@@ -375,3 +375,11 @@
   display: none !important;
 }
 
+#main-content.explorer-collapsed #sidebar-panel {
+  display: none !important;
+}
+
+#main-content.explorer-collapsed #sidebar-resizer {
+  display: none !important;
+}
+
