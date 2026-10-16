@@ -395,6 +395,7 @@ const PRIVACY_START_LOCKED_KEY = "clio-notes-privacy-start-locked";
 const PRIVACY_TIMEOUT_KEY = "clio-notes-privacy-timeout";
 const PRIVACY_SEARCH_KEY = "clio-notes-privacy-search";
 const PRIVACY_AI_KEY = "clio-notes-privacy-ai";
+const AI_HISTORY_KEY = "clio-notes-ai-history";
 const PRIVACY_PASSWORD_KEY = "clio-notes-privacy-password";
 const PRIVACY_LINKS_KEY = "clio-notes-privacy-links";
 const PRIVACY_TIMEZONE_KEY = "clio-notes-privacy-timezone";
@@ -3864,6 +3865,7 @@ function renderPrivacyLinks() {
 function hidePrivacyScreen() {
   if (!state.privacyActive) return;
   state.privacyActive = false;
+  setAiWindowOpen(false);
   privacyScreen.classList.remove("opacity-100");
   privacyScreen.classList.add("pointer-events-none");
   setTimeout(() => {
@@ -4345,77 +4347,105 @@ function disconnectCalendar() {
   showPrivacyCalendarSignedOut(createPrivacyCalendarAuthError("not-configured"));
 }
 
-function initializeFloatingAi() {
-  console.log("Initializing Floating AI Assistant... (v2)");
-  
+const AI_GREETING = "Hi! I'm AI mode. Ask me anything — your questions are saved in the history.";
+const AI_HISTORY_LIMIT = 200;
+
+function loadAiHistory() {
   try {
-    const btn = document.getElementById("floating-ai-btn");
-    const win = document.getElementById("floating-ai-window");
-    const closeBtn = document.getElementById("floating-ai-close");
-    const form = document.getElementById("floating-ai-form");
-    const input = document.getElementById("floating-ai-input");
-
-    if (!btn || !win) {
-      console.warn("Floating AI elements not found in current view. This might be expected if the DOM isn't fully ready yet.", { btn, win });
-      // Retry in a moment if not found
-      setTimeout(initializeFloatingAi, 500);
-      return;
-    }
-
-    // Use a fresh listener to avoid duplicates if re-called
-    btn.onclick = (e) => {
-      console.log("Floating AI Button Triggered!");
-      e.stopPropagation();
-      const isHidden = win.classList.contains("hidden");
-      if (isHidden) {
-        win.classList.remove("hidden");
-        win.classList.add("flex");
-        input?.focus();
-      } else {
-        win.classList.add("hidden");
-        win.classList.remove("flex");
-      }
-    };
-
-    closeBtn.onclick = () => {
-      win.classList.add("hidden");
-      win.classList.remove("flex");
-    };
-
-    form.onsubmit = (e) => {
-      e.preventDefault();
-      const message = input.value.trim();
-      if (message) {
-        appendAiMessage("user", message);
-        input.value = "";
-        
-        setTimeout(() => {
-          if (message.toLowerCase().includes("open")) {
-             appendAiMessage("assistant", "Opening your selected AI engine...");
-             setTimeout(() => window.open(state.privacyAiEngine, "_blank"), 1000);
-          } else {
-             appendAiMessage("assistant", "I'm a privacy-focused assistant. For deep reasoning, I can open " + (new URL(state.privacyAiEngine).hostname) + " for you. Just type 'open'.");
-          }
-        }, 1000);
-      }
-    };
-
-    // Re-initialize Lucide icons
-    createIcons({ icons, root: document.getElementById("floating-ai-container") });
-    console.log("Floating AI Assistant initialized successfully.");
-  } catch (err) {
-    console.error("Failed to initialize Floating AI Assistant:", err);
+    const stored = JSON.parse(localStorage.getItem(AI_HISTORY_KEY) || "[]");
+    return Array.isArray(stored) ? stored : [];
+  } catch {
+    return [];
   }
 }
 
-function appendAiMessage(role, text) {
-  const msgs = document.getElementById("floating-ai-messages");
-  if (!msgs) return;
-  
+function saveAiHistory(history) {
+  try {
+    localStorage.setItem(AI_HISTORY_KEY, JSON.stringify(history.slice(-AI_HISTORY_LIMIT)));
+  } catch (err) {
+    console.warn("Could not save AI history:", err);
+  }
+}
+
+function setAiWindowOpen(open) {
+  const win = document.getElementById("floating-ai-window");
+  if (!win) return;
+  win.classList.toggle("hidden", !open);
+  win.classList.toggle("flex", open);
+  if (open) {
+    renderAiHistory();
+    document.getElementById("floating-ai-input")?.focus();
+  }
+}
+
+function initializeFloatingAi() {
+  const btn = document.getElementById("privacy-ai-mode-btn");
+  const win = document.getElementById("floating-ai-window");
+  const closeBtn = document.getElementById("floating-ai-close");
+  const clearBtn = document.getElementById("floating-ai-clear");
+  const form = document.getElementById("floating-ai-form");
+  const input = document.getElementById("floating-ai-input");
+  if (!btn || !win) return;
+
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    setAiWindowOpen(win.classList.contains("hidden"));
+  };
+
+  closeBtn.onclick = () => setAiWindowOpen(false);
+
+  clearBtn.onclick = () => {
+    saveAiHistory([]);
+    renderAiHistory();
+  };
+
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const message = input.value.trim();
+    if (!message) return;
+    appendAiMessage("user", message);
+    input.value = "";
+
+    setTimeout(() => {
+      if (message.toLowerCase().includes("open")) {
+        appendAiMessage("assistant", "Opening your selected AI engine...");
+        setTimeout(() => window.open(state.privacyAiEngine, "_blank"), 1000);
+      } else {
+        appendAiMessage("assistant", "I'm a privacy-focused assistant. For deep reasoning, I can open " + (new URL(state.privacyAiEngine).hostname) + " for you. Just type 'open'.");
+      }
+    }, 1000);
+  };
+
+  renderAiHistory();
+  createIcons({ icons, root: document.getElementById("floating-ai-container") });
+}
+
+function renderAiMessage(msgs, role, text) {
   const msg = document.createElement("div");
   msg.className = `ai-message ai-message-${role}`;
   msg.textContent = text;
   msgs.appendChild(msg);
+}
+
+function renderAiHistory() {
+  const msgs = document.getElementById("floating-ai-messages");
+  if (!msgs) return;
+  msgs.replaceChildren();
+  renderAiMessage(msgs, "assistant", AI_GREETING);
+  for (const { role, text } of loadAiHistory()) {
+    renderAiMessage(msgs, role, text);
+  }
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function appendAiMessage(role, text) {
+  const history = loadAiHistory();
+  history.push({ role, text, ts: Date.now() });
+  saveAiHistory(history);
+
+  const msgs = document.getElementById("floating-ai-messages");
+  if (!msgs) return;
+  renderAiMessage(msgs, role, text);
   msgs.scrollTop = msgs.scrollHeight;
 }
 
