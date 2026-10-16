@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
+/* Short viewports (small laptops, zoomed windows): compact lock screen widgets */
+@custom-variant short (@media (max-height: 860px));
+
 @layer base {
   :root {
     --color-bg: #fafafa;
