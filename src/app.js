@@ -3846,7 +3846,7 @@ function renderPrivacyLinks() {
     const a = document.createElement("a");
     a.href = url;
     a.target = "_blank";
-    a.className = "flex flex-col items-center gap-2 p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl transition-all hover:scale-110 group";
+    a.className = "flex flex-col items-center gap-2 p-3 sm:p-4 short:p-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl transition-all hover:scale-110 group";
     a.title = label;
     a.innerHTML = `<i data-lucide="${icon}" class="w-6 h-6 text-white/70 group-hover:text-white"></i><span class="text-[10px] font-medium text-white/50 group-hover:text-white/80 transition-colors truncate max-w-[80px]">${escapeHtml(label)}</span>`;
     privacyShortcuts.appendChild(a);
@@ -4088,7 +4088,7 @@ function renderPrivacyCalendarEvents(events) {
     privacyCalendarEvents.innerHTML = "";
     events.forEach(event => {
       const li = document.createElement("li");
-      li.className = "flex items-center gap-3 px-4 py-3 bg-white/5 border border-white/10 rounded-xl";
+      li.className = "flex items-center gap-3 px-4 py-3 short:py-2 bg-white/5 border border-white/10 rounded-xl";
 
       const time = document.createElement("span");
       time.className = "text-xs font-bold text-white/40 uppercase tracking-tight shrink-0 w-16";
