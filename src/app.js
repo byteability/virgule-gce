@@ -48,7 +48,15 @@ import {
   BookmarkPlus,
   MoreVertical,
   GripVertical,
-  Link
+  Link,
+  Calendar,
+  LoaderCircle,
+  CalendarOff,
+  LogIn,
+  CalendarCheck,
+  TriangleAlert,
+  Copy,
+  Check
 } from 'lucide';
 
 const icons = {
@@ -2347,7 +2355,7 @@ async function renameEntry(sourcePath, kind) {
         }
       });
 
-      if (state.activeLibraryFolderId && (getFrontPageMap()[state.activeLibraryFolderId] || "") === sourceRelative) {
+      if (state.activeLibraryFolderId && (state.frontPageByFolder[state.activeLibraryFolderId] || "") === sourceRelative) {
         state.frontPageByFolder[state.activeLibraryFolderId] = newRelativePath;
         saveFrontPageMap();
       }
