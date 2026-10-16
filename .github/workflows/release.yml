@@ -40,19 +40,38 @@ jobs:
           fi
           echo "latest=$latest" >> "$GITHUB_OUTPUT"
 
-      - name: Determine version bump from PR title
+      - name: Determine version bump from conventional commits
         id: bump
         env:
+          LATEST_TAG: ${{ steps.latest_tag.outputs.latest }}
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          title_upper=$(echo "$PR_TITLE" | tr '[:lower:]' '[:upper:]')
-          if [[ "$title_upper" == *"BREAKING CHANGE"* ]]; then
-            echo "type=major" >> "$GITHUB_OUTPUT"
-          elif [[ "$title_upper" == *"FEAT:"* ]]; then
-            echo "type=minor" >> "$GITHUB_OUTPUT"
+          # Every commit landing on main since the last release, plus the PR title
+          # (covers squash merges whose commit message may differ).
+          if git rev-parse -q --verify "refs/tags/$LATEST_TAG" >/dev/null; then
+            range="$LATEST_TAG..HEAD"
           else
-            echo "type=patch" >> "$GITHUB_OUTPUT"
+            range="HEAD"
           fi
+          subjects=$(git log --no-merges --format='%s' "$range"; echo "$PR_TITLE")
+          bodies=$(git log --no-merges --format='%b' "$range")
+
+          type_re='^[a-z]+(\([^)]*\))?'
+          if grep -Eq "${type_re}!:" <<< "$subjects" \
+             || grep -Eq '^BREAKING[ -]CHANGE:' <<< "$bodies"; then
+            type=major
+          elif grep -Eq '^feat(\([^)]*\))?:' <<< "$subjects"; then
+            type=minor
+          elif grep -Eq '^fix(\([^)]*\))?:' <<< "$subjects"; then
+            type=patch
+          else
+            # Only chore/docs/ci/etc. since the last tag — still cut a patch release.
+            type=patch
+          fi
+          echo "Commits since $LATEST_TAG:"
+          echo "$subjects"
+          echo "Bump: $type"
+          echo "type=$type" >> "$GITHUB_OUTPUT"
 
       - name: Compute new tag
         id: new_tag
